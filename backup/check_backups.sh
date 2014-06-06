@@ -5,7 +5,7 @@
 #
 DOMAIN=
 #DUMPS_ENABLED=1
-SERVERLIST="cluster1:10.77.24.11 cluster2:10.77.25.134 cluster3:10.77.25.147 cluster4:10.77.25.104 cluster5:10.77.24.138"
+SERVERLIST="cluster1:10.17.54.10 cluster2:10.17.53.34 cluster3:10.17.5.17"
 #
 #
 [ "$1" != "" ] && serverlist=$1
