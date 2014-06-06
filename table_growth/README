@@ -1,0 +1,21 @@
+sample.sh gathers info from various servers and stores consolidated info in local DB (invoked once a day)
+other scripts read the local DB and extract growth statistics
+
+Create an empty DB and the following table:
+
+mysql> show create table growth\G
+*************************** 1. row ***************************
+       Table: growth
+Create Table: CREATE TABLE `growth` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `sample_date` date NOT NULL,
+  `server` char(64) NOT NULL,
+  `schema_name` char(32) NOT NULL,
+  `table_name` char(64) NOT NULL,
+  `table_size` decimal(7,2) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `server` (`server`,`schema_name`,`table_name`),
+  KEY `sample_date` (`sample_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+1 row in set (0.00 sec)
+
