@@ -1,0 +1,17 @@
+check_backups.sh: creates a report email about backup status for your clusters
+pdb_backup_status.sh: invoked from backup server from check_backups.sh
+pdb_cons_backup.sh: creates consolidated incremental backup (eg daily)
+pdb_full_backup.sh: creates full backup
+pdb_incr_backup.sh: creates incremental backup (eg hourly)
+restore.sh: automatically restores latest full and all available consolidated and incrementals
+etc_default_backup_full: full backup config file, tailor and install in /etc/default/backup_full
+etc_default_backup_incr: incr backup config file, tailor and install in /etc/default/backup_incr
+workdir.tar: unpack in your root as root user (I mean /, not /root). Used during backup for tmp files
+
+Miscellaneous notes:
+- scripts need to run as root user
+- you need to set up ssh equivalence between slaves taking backup and archive server
+- remember to unpack workdir.tar, remove old LSN files in there
+- purge user requires if you use Percona server and innodb page tracking; requires SUPER
+- consolidated and incremental backups are optional; see example cron schedule
+- to use automatic restore script, just copy over, to the server to be restored, the ssh key to access the archive server and the config file for full backup from the slave which originally took the backup. The script will automatically connect to archive server, and stream the backups over ssh, feeding to "xtrabackup --prepare" as appropriate. If it completes, your restore is ready to be fired. 

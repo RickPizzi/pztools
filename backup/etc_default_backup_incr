@@ -1,0 +1,8 @@
+remote_server=archive-server.yourdomain.com
+remote_path=/home/backup
+remote_user=backup
+local_path=/backup
+db_user=backup
+db_pass=
+parallelism=50
+xtrabackup=xtrabackup_56
