@@ -1,0 +1,3 @@
+Scripts to import a set of MySQL schemas from different servers into a single target MySQL server.
+The import happens in parallel.  The scripts are optimized for speed, therefore the import is done 
+using MyISAM engine (this means the target server should only be used for read workloads).
