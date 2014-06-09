@@ -15,6 +15,7 @@ fi
 running=1
 while true
 do
+	kill $pid 2>/dev/null || break
 	latency=$(echo ls | su - tungsten -c cctrl | fgrep -i latency | tr -d "[)|]"  | cut -d"=" -f 2 | cut -d"." -f 1 | sort -nrk 1 | head -1)
 	if [ $latency -gt $MAX_LATENCY ]
 	then
