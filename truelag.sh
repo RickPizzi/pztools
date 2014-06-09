@@ -44,6 +44,6 @@ io_fnolag=$(expr $master_filenum - $io_filenum)
 [ $io_fnolag -gt 0 ] && io_poslag="and some"
 [ $sql_fnolag -gt 0 ] && sql_poslag="and some"
 printf "Master:     %s %12d\n" $master_file $master_pos 
-printf "I/O thread: %s %12d (%d binlogs %s events behind)\n" $io_file $io_pos $io_fnolag $io_poslag
-printf "SQL thread: %s %12d (%d binlogs %s events behind)\n" $sql_file $sql_pos $sql_fnolag $sql_poslag
+printf "I/O thread: %s %12d (%d binlogs %s events behind)\n" $io_file $io_pos $io_fnolag "$io_poslag"
+printf "SQL thread: %s %12d (%d binlogs %s events behind)\n" $sql_file $sql_pos $sql_fnolag "$sql_poslag"
 exit 0
