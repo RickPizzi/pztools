@@ -3,6 +3,7 @@
 #	reports about replication lag highlighting both I/O thread and SQL thread lag
 #	rpizzi@blackbirdit.com
 #
+#
 #	note: reported lag is not 100% accurate due to data being sourced in different places
 #
 tmpf=/tmp/truelag$$
