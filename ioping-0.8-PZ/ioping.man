@@ -1,0 +1,163 @@
+IOPING(1)                        User Commands                       IOPING(1)
+
+
+
+NNAAMMEE
+       ioping - simple disk I/O latency monitoring tool
+
+SSYYNNOOPPSSYYSS
+       _d_i_r_e_c_t_o_r_y|_f_i_l_e|_d_e_v_i_c_e
+       --hh | --vv
+
+DDEESSCCRRIIPPTTIIOONN
+       This tool lets you monitor I/O latency in real time.
+
+OOPPTTIIOONNSS
+       --cc _c_o_u_n_t
+              Stop after _c_o_u_n_t requests.
+
+       --ww _d_e_a_d_l_i_n_e
+              Stop after _d_e_a_d_l_i_n_e time passed.
+
+       --pp _p_e_r_i_o_d
+              Print raw statistics for every _p_e_r_i_o_d requests.
+
+       --PP _p_e_r_i_o_d
+              Print raw statistics for every _p_e_r_i_o_d in time.
+
+       --ii _i_n_t_e_r_v_a_l
+              Set time between requests to _i_n_t_e_r_v_a_l (11ss).
+
+       --ss _s_i_z_e
+              Request size (44kk).
+
+       --SS _s_i_z_e
+              Working  set  size  (11mm  for  directory,  full  size for file or
+              device).
+
+       --oo _o_f_f_s_e_t
+              Offset of working set in the file/device (0).
+
+       --LL     Use sequential operations rather than  random.  This  also  sets
+              request size to 225566kk (as in --ss 225566kk).
+
+       --AA     Use asynchronous I/O (syscalls iioo__ssuubbmmiitt(2), iioo__ssuubbmmiitt(2), etc).
+
+       --CC     Use cached  I/O  (suppress  cache  invalidation  via  ppoossiixx__ffaadd--
+              vviissee(2)).
+
+       --DD     Use direct I/O (see OO__DDIIRREECCTT in ooppeenn(2)).
+
+       --WW     Use  writes  rather  than reads.  **DDAANNGGEERROOUUSS** It will shred your
+              data if target is file or device, repeat key tree  times  (--WWWWWW)
+              to do this.
+
+       --RR     Disk seek rate test (same as --qq --ii 00 --ww 33 --SS 6644mm).
+
+       --BB     Batch mode. Be quiet and print final statistics in raw format.
+
+       --qq     Suppress periodical human-readable output.
+
+       --hh     Display help message and exit.
+
+       --vv     Display version and exit.
+
+   AArrgguummeenntt ssuuffffiixxeess
+       For  options that expect time argument (--ii, --PP and --ww), default is sec-
+       onds,  unless  you  specify  one  of  the  following  suffixes   (case-
+       insensitive):
+
+       uuss, uusseecc
+              microseconds (a millionth of a second, 1 / 1 000 000)
+
+       mmss, mmsseecc
+              milliseconds (a thousandth of a second, 1 / 1 000)
+
+       ss, sseecc seconds
+
+       mm, mmiinn minutes
+
+       hh, hhoouurr
+              hours
+
+       For  options  that  expect  "size" argument (--ss, --SS and --oo), default is
+       bytes, unless you specify one of the following suffixes  (case-insensi-
+       tive):
+
+       sseeccttoorr disk sectors (a sector is always 512).
+
+       KKiiBB, kk, kkbb
+              kilobytes (1 024 bytes)
+
+       ppaaggee   memory pages (a page is always 4KiB).
+
+       MMiiBB, mm, mmbb
+              megabytes (1 048 576 bytes)
+
+       GGiiBB, gg, ggbb
+              gigabytes (1 073 741 824 bytes)
+
+       TTiiBB, tt, ttbb
+              terabytes (1 099 511 627 776 bytes)
+
+       For  options  that expect "number" argument (--pp and --cc) you can option-
+       ally specify one of the following suffixes (case-insensitive):
+
+       kk      kilo (thousands, 1 000)
+
+       mm      mega (millions, 1 000 000)
+
+       gg      giga (billions, 1 000 000 000)
+
+       tt      tera (trillions, 1 000 000 000 000)
+
+EEXXIITT SSTTAATTUUSS
+       Returns 00 upon success. The following error codes are defined:
+
+       11      Invalid usage (error in arguments).
+
+       22      Error during preparation stage.
+
+       33      Error during runtime.
+
+RRAAWW SSTTAATTIISSTTIICCSS
+       iiooppiinngg --pp 110000 --cc 220000 --ii 00 --qq ..
+       100 26694 3746 15344272 188 267 1923 228
+       100 24165 4138 16950134 190 242 2348 214
+       (1) (2)   (3)  (4)      (5) (6) (7)  (8)
+
+       (1) number of requests
+       (2) serving time         (usec)
+       (3) requests per second  (iops)
+       (4) transfer speed       (bytes/sec)
+       (5) minimal request time (usec)
+       (6) average request time (usec)
+       (7) maximum request time (usec)
+       (8) request time standard deviation (usec)
+
+EEXXAAMMPPLLEESS
+       iiooppiinngg ..
+              Show disk I/O latency using the default values and the current
+              directory, until interrupted.
+
+       iiooppiinngg --cc 1100 --ss 11MM //ttmmpp
+              Measure latency on //ttmmpp using 10 requests of 1 megabyte each.
+
+       iiooppiinngg --RR //ddeevv//ssddaa
+              Measure disk seek rate.
+
+       iiooppiinngg --RRLL //ddeevv//ssddaa
+              Measure disk sequential speed.
+
+SSEEEE AALLSSOO
+       iioossttaatt(1), dddd(1), ffiioo(1), ddbbeenncchh(1), ffssssttrreessss,, xxffsstteessttss,, hhddppaarrmm(8),
+       bbaaddbblloocckkss(8),
+
+HHOOMMEEPPAAGGEE
+AAUUTTHHOORRSS
+       This program was written by Konstantin Khlebnikov
+       Man-page was written by Kir Kolyshkin
+
+
+
+                                   Dec 2013                          IOPING(1)
