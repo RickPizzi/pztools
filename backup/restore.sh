@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #	backup restore script
-#	v 2.20 Mar 2014
+#	v 2.21 Sep 2014
 #	rpizzi@blackbirdit.com
 #	looks at default files to find archive server, etc
 #	then hunts for more recent full backup and restores up to latest hourly incremental
@@ -163,6 +163,7 @@ fi
 if [ "$last_incr" != "" ]
 then
 	cp $1/incrementals/$last_incr/xtrabackup_binlog_info $1
+	cp $1/incrementals/$last_incr/xtrabackup_slave_info $1
 	cd $1/incrementals/$last_incr
 	for f in $(find . -name \*frm -o -name \*par | cut -d "/" -f 2-)
 	do
@@ -172,6 +173,7 @@ else
 	if [ "$last_cons" != "" ]
 	then
 		cp $1/consolidated/$last_cons/xtrabackup_binlog_info $1
+		cp $1/consolidated/$last_cons/xtrabackup_slave_info $1
 		cd $1/consolidated/$last_cons
 		for f in $(find . -name \*frm -o -name \*par | cut -d "/" -f 2-)
 		do
