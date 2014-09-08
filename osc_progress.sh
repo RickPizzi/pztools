@@ -26,6 +26,7 @@ while true
 do
 	row=$(echo "select * from information_schema.processlist where user = '"$OSC_USER"' and info like 'INSERT LOW%'" | mysql -AN -u $USER -p$PASS | sed -e "s/\`//g")
 	[ "$row" != "" ] && break
+	sleep 1
 done
 echo "done."
 table=$(echo $row | grep -oP '(?<=FROM\s)\w+\.\w+')
