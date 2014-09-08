@@ -19,8 +19,6 @@ then
 fi
 [ "$1" != "" ] && OSC_USER=$1 || OSC_USER=$USER
 #
-tmpf=/tmp/osc_real_meter.$$
-trap 'rm -f $tmpf' 0
 echo -n "Getting OSC information... "
 while true
 do
