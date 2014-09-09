@@ -6,7 +6,7 @@
 #
 MAX_LATENCY=600
 #
-pid=$(ps -eAo pid,args | fgrep pt-online-schema-change | grep -v grep | tr -s "[ ]" | cut -d" " -f 1)
+pid=$(ps -eAo pid,args | fgrep pt-online-schema-change | grep -v grep | tr -s "[ ]" | sed -e "s/^ //g" | cut -d" " -f 1)
 if [ "$pid" = "" ]
 then
 	echo "nothing to babysit"
