@@ -46,7 +46,7 @@ date_path=$(date "+%Y/%m/%d")
 
 
 ssh -q $remote_user@$remote_server "mkdir -p $remote_path/$date_path"
-innobackupex --incremental --no-lock --no-timestamp --parallel=$thread_count --ibbackup=/usr/bin/$xtrabackup  --socket=$socket --user=$db_user --password=$db_pass --defaults-file=$conf_file --stream=xbstream --extra-lsndir=$lsn_dir --incremental-basedir=$lsn_dir $backup_path 2>>$log_file | ssh -c arcfour128 -q $remote_user@$remote_server "gzip > $remote_path/$date_path/delta_$backup_file" 2>>$local_err
+innobackupex --incremental --slave-info --no-lock --no-timestamp --parallel=$thread_count --ibbackup=/usr/bin/$xtrabackup  --socket=$socket --user=$db_user --password=$db_pass --defaults-file=$conf_file --stream=xbstream --extra-lsndir=$lsn_dir --incremental-basedir=$lsn_dir $backup_path 2>>$log_file | ssh -c arcfour128 -q $remote_user@$remote_server "gzip > $remote_path/$date_path/delta_$backup_file" 2>>$local_err
 status=0
 if [ -s $local_err ]
 then
