@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.5.16"
+VERSION="0.6.1"
 BASE=/usr/local/executor
 #
 post=0
@@ -119,7 +119,14 @@ run_statement()
 	q_warning=""
 	q_last_id=""
 	last_id=""
-	my_err=$(echo "$1; show warnings; select last_insert_id();" | mysql -u "$user" -p"$password" -h "$host" -vv "$db" 2>&1 | fgrep -v Bye)
+	case $2 in
+		0)
+			my_err=$(echo "$1; show warnings; select last_insert_id();" | mysql -u "$user" -p"$password" -h "$host" -vv "$db" 2>&1 | fgrep -v Bye)
+			;;
+		1)
+			my_err=$(echo "begin; $1; show warnings; select last_insert_id(); rollback" | mysql -u "$user" -p"$password" -h "$host" -vv "$db" 2>&1 | fgrep -v Bye)
+			;;
+	esac
 	c=0
 	saveIFS="$IFS"
 	IFS="
@@ -131,24 +138,44 @@ run_statement()
 			c=$(($c + 1))
 			continue
 		fi
-		case $c in
-			0) q_error="$row";;
-			2) q_result="$row";;
-			4) q_warning="$q_warning$(echo $row | fgrep Warning)";;
-			6) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
+		case $2 in
+			0)	case $c in
+					0) q_error="$row";;
+					2) q_result="$row";;
+					4) q_warning="$q_warning$(echo $row | fgrep Warning)";;
+					6) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
+				esac
+				;;
+			1)	case $c in
+					0) q_error="$row";;
+					4) q_result="$row";;
+					6) q_warning="$q_warning$(echo $row | fgrep Warning)";;
+					8) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
+				esac
+				;;
 		esac
 		#display "$c $row" 0
 	done
 	IFS="$saveIFS"
 	if [ $(echo "$my_err" | fgrep -c "ERROR ") -eq 1 ]
 	then
-		display "$q_error $q_result" 1
-		statement_error=1
+		case $2 in
+			0) 	display "$q_error $q_result" 1
+				statement_error=1
+				;;
+			1) 	display "DRY RUN RESULT: $q_error" 3
+				;;
+		esac
 	else
-		last_id=$q_last_id
-		display "$q_result" 2
-		display "$q_warning" 3
-		log "$1"
+		case $2 in
+			0)	last_id=$q_last_id
+				display "$q_result" 2
+				display "$q_warning" 3
+				log "$1"
+				;;
+			1) 	display "DRY RUN RESULT:<BR>$q_result<BR>$q_warning" 3
+				;;
+		esac
 	fi
 }
 
@@ -439,10 +466,7 @@ query_delete()
 			cat $tmpf >> $rollback_file
 		fi
 	fi
-	if [ $dryrun -eq 0 ]
-	then
-		run_statement "$1"
-	fi
+	run_statement "$1" $dryrun
 }
 
 query_insert()
@@ -458,9 +482,9 @@ query_insert()
 	table="${q[2]}"
 	check_table_presence
 	[ $table_present -ne 1 ] && return
+	run_statement "$1" $dryrun
 	if [ $dryrun -eq 0 ]
 	then
-		run_statement "$1"
 		if [ $statement_error -eq 0 ]
 		then
 			if [ "${3,,}" != "replace" ]
@@ -470,7 +494,7 @@ query_insert()
 					pk=$(get_pk)
 					[ "$db" != "" ] && echo "USE $db" >> $rollback_file
 					echo "DELETE FROM $table WHERE $pk = '$last_id';" >> $rollback_file
-					display "AUTO-INC value assigned:  $pk = $last_id, rollback available" 3
+					display "AUTO-INC value assigned:  $last_id, rollback available" 3
 				else
 					echo "-- rollback not supported for: $1" >> $rollback_file
 				fi
@@ -599,6 +623,7 @@ query_update()
 		#
 		#	WHERE key IN (....)
 		#
+		[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 		for arg in ${in_set[@]}
 		do
 			saveIFS="$IFS"
@@ -608,18 +633,16 @@ query_update()
 			naked_arg=$(echo $arg | tr -d "[']")
 			if [ $pkwa -eq 1 ]
 			then
+				saveIFS="$IFS"
 				if [ $pkc -gt 1 ]
 				then
-					saveIFS="$IFS"
 					IFS=" "
 					rbw=$(rollback_pkwhere "$pk")
 					IFS="$saveIFS"
 					echo -e "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE $where" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db" >> $rollback_file
 				else
-					saveIFS="$IFS"
 					IFS="
-	"
-					[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
+"
 					for row in $(echo "SELECT $pk FROM $table WHERE ${wa[0]}='$naked_arg'" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db")
                                 	do
                                         	res=$(echo -e "SET NAMES utf8; SELECT $rbs FROM $table WHERE $pk = '$row';" | mysql -ANr -h $host -u "$user" -p"$password" "$db" | sed -e "s/'NULL'/NULL/g")
@@ -632,7 +655,6 @@ query_update()
 				if [ "$res" != "" ]
 				then
 					rollback=1
-					[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 					echo "UPDATE $table SET $res WHERE ${wa[0]}='$naked_arg';" >> $rollback_file
 				fi
 			fi
@@ -680,10 +702,7 @@ query_update()
 			fi
 		fi
 	fi
-	if [ $dryrun -eq 0 ]
-	then
-		run_statement "$1"
-	fi
+	run_statement "$1" $dryrun
 }
 
 show_rollback()
