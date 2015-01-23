@@ -1,0 +1,20 @@
+Web Query Executor:
+
+a CGI script written in bash that can be used to execute DML against a MySQL database in a somewhat 
+safe manner.
+
+What you get:
+
+- automatic rollback scripts to revert the changes the query will apply
+- automatic check for PK and/or index use (avoid locking table scans!!)
+- dry run capability (check query and compute rollback statements without modifying the data)
+- log of everything executed against the database
+
+The user using this script must have proper grants on the database from the host the CGI script runs from.
+The script runs under apache httpd, put it in the cgi-bin directory and configure accordingly.
+ 
+WATCH OUT: this is early stage software. Bugs are there. Make sure to always check the rollback code in 
+dry run mode before you run the actual changes.
+
+Feedbacks welcome!
+Enjoy
