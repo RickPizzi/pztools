@@ -1,13 +1,17 @@
 #!/bin/bash
 #
 #	backup restore script
-#	v 2.21 Sep 2014
-#	rpizzi@blackbirdit.com
+#	v 2.30 Jan 2015
+#	riccardo.pizzi@rumbo.com
 #	looks at default files to find archive server, etc
 #	then hunts for more recent full backup and restores up to latest hourly incremental
 #
+#	optionally, you can pass a second parameter which is the path to a specific full backup file
+#	and it will restore that one instead of the most recent one, and all available incrementals for that day
+#
 #	parameters:
-#	$1 = datadir  (where you want to restore the backup)
+#	$1 = datadir  (where you want to restore the backup) -- mandatory
+#	$2 = /path/to/FS_file  (restore this full backup and not the most recent available)
 #
 #       restore sequence
 #
@@ -17,13 +21,23 @@
 #
 #
 DEFAULTS=/etc/default/backup_full
-KEY=/home/mysql_backup/.ssh/id_rsa
-MEMORY=20GB
-log=./backup.log
+KEY=/localhome/dbadm/.ssh/id_rsa
+MEMORY=48GB
+#	if you want to skip incrementals set the following to y
+FULL_ONLY=n
 #
-if [ $# -ne 1 ] 
+if [ $# -lt 1 ] 
 then
-	echo "usage: $0 <datadir>"
+	echo "usage: $0 <datadir> [ full backup ]"
+	exit 1
+fi
+if [ $# -eq 2 ] 
+then
+	full="$2"
+fi
+if [ "${1:0:1}" != "/" ]
+then
+	echo "datadir must start with \"/\""	
 	exit 1
 fi
 if [ -d $1 ] 
@@ -37,27 +51,38 @@ then
 	echo "error creating datadir $1"
 	exit 1
 fi
+log=/tmp/restore.log
 tmpf=/tmp/restore.$$
 trap 'rm -f $tmpf' 0
 remote_server=$(grep "^remote_server=" $DEFAULTS | cut -d"=" -f 2)
 remote_path=$(grep "^remote_path=" $DEFAULTS | cut -d"=" -f 2)
 remote_user=$(grep "^remote_user=" $DEFAULTS | cut -d"=" -f 2)
 xtrabackup=$(grep "^xtrabackup=" $DEFAULTS | cut -d"=" -f 2)
-lastfull=$(ssh -q -i $KEY $remote_user@$remote_server "find $remote_path -type f -name FS\* ! -mmin -60" | tail -1)
-if [ "$lastfull" = "" ]
+if [ "$full" = "" ]
 then
-	echo "unable to autodetect last full backup"
-	exit 1
+	full=$(ssh -q -i $KEY $remote_user@$remote_server "find $remote_path -type f -name FS\* ! -mmin -60 " | sort | tail -1)
+	if [ "$full" = "" ]
+	then
+		echo "unable to autodetect last full backup"
+		exit 1
+	fi
 fi
+incrbase=$(dirname $full)
 offset=$(echo $remote_path | tr -s "[/]" "[\n]" | wc -l)
-fulldate=$(echo $lastfull | cut -d"/" -f $(expr 1 + $offset)-$(expr 3 + $offset))
-consolidated=$(ssh -q -i $KEY $remote_user@$remote_server "find $remote_path -type f -name delta_consolidated\* -newer $lastfull ! -mmin -60")
-incrementals=$(ssh -q -i $KEY $remote_user@$remote_server "find $remote_path -type f -name delta_inc\* -newer $lastfull ! -mmin -30")
-n_cons=$(echo $consolidated | wc -w)
-n_incr=$(echo $incrementals | wc -w)
+fulldate=$(echo $full | cut -d"/" -f $(expr 1 + $offset)-$(expr 3 + $offset))
+if [ "$FULL_ONLY" != "y" ]
+then
+	consolidated=$(ssh -q -i $KEY $remote_user@$remote_server "find $incrbase -type f -name delta_consolidated\* -newer $full ! -mmin -60 | sort")
+	incrementals=$(ssh -q -i $KEY $remote_user@$remote_server "find $incrbase -type f -name delta_inc\* -newer $full ! -mmin -30" | sort)
+	n_cons=$(echo $consolidated | wc -w)
+	n_incr=$(echo $incrementals | wc -w)
+else
+	n_cons=0
+	n_incr=0
+fi
 echo "*** Phase I -- Full Backup"
 echo "**** Copying full backup dated $fulldate"
-ssh -q -i $KEY $remote_user@$remote_server cat $lastfull | zcat | xbstream -x -C $1
+ssh -q -i $KEY $remote_user@$remote_server cat $full | zcat | xbstream -x -C $1
 if [ $? -ne 0 ]
 then
 	echo "error copying full backup, aborting"
