@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.6.1"
+VERSION="0.6.2"
 BASE=/usr/local/executor
 #
 post=0
@@ -86,21 +86,31 @@ post_checks()
 	then 
 		display "Please specify a server" 1
 		post_error=1
+		return
 	fi
 	if [ "$user" = "" ]
 	then
 		display "Please specify your user" 1
 		post_error=1
+		return
 	fi
 	if [ "$user" = "root" ]
 	then
 		display "Root access is not allowed" 1
 		post_error=1
+		return
 	fi
 	if [ "$password" = "" ]
 	then
 		display "Please specify your password" 1
 		post_error=1
+		return
+	fi
+	if [ "$(echo "show variables like 'read_only'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>&1 | cut -f 2)" != "OFF" ]
+	then
+		display "This instance is READ ONLY" 1
+		post_error=1
+		return
 	fi
 	if [ "$db" != "" ]
 	then
