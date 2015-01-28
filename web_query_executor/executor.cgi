@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.6.2"
+VERSION="0.6.4"
 BASE=/usr/local/executor
 #
 post=0
@@ -262,7 +262,7 @@ replace_rollback()
 		#echo "DEBUG: where=\"$rr_where\"<br>"
 		rr_ins=$(
 			( 
-				echo -n "SELECT CONCAT_WS(',', "
+				echo -n "SET NAMES utf8; SELECT CONCAT_WS(',', "
 				for rr_s in $(seq 0 1 $rr_maxidx)
 				do
 					echo -n "IF(${rr_cols[$rr_s]} IS NULL,'NULL',CONCAT('\'', ${rr_cols[$rr_s]}, '\''))"
@@ -295,7 +295,7 @@ is_autoinc()
 			
 is_index()
 {
-	echo "show index from $table where Column_name = '$1'" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db" | wc -l
+	echo "show index from $table where Column_name = '$1' and Seq_in_index = 1" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db" | wc -l
 }
 
 check_pk_use()
@@ -448,6 +448,7 @@ query_delete()
 	for row in $(echo -e $wa)
 	do
 		fld=$(echo $row | cut -d"=" -f 1 | tr -d "[ ]")
+		display "DEBUG: $fld" 0
 		if [ $(is_index $fld) -eq 1 ] 
 		then
 			using_index=1
@@ -456,7 +457,8 @@ query_delete()
 	done
 	if [ $using_index -eq 0 ]
 	then
-		display "WARNING: no indexed columns found in WHERE condition" 3
+		display "no indexed columns found in WHERE condition, query cannot be executed" 1
+		return
 	fi
 	if [ $(echo $table | fgrep -c "." ) -ne 0 ]
 	then
