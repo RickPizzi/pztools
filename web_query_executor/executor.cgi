@@ -448,7 +448,6 @@ query_delete()
 	for row in $(echo -e $wa)
 	do
 		fld=$(echo $row | cut -d"=" -f 1 | tr -d "[ ]")
-		display "DEBUG: $fld" 0
 		if [ $(is_index $fld) -eq 1 ] 
 		then
 			using_index=1
