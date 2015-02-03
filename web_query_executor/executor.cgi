@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.6.4"
+VERSION="0.6.6"
 BASE=/usr/local/executor
 #
 post=0
@@ -16,7 +16,7 @@ trap 'rm -f $tmpf' 0
 
 unescape_query()
 {
-	echo "$1" | sed -e "s/%40/@/g" -e "s/%60/\`/g" -e "s/+/ /g" -e "s/%3D/=/g" -e "s/%2B/+/g" -e "s/%3B/;/g" -e "s/%27/'/g" -e "s/%3A/:/g" -e "s/%28/(/g" -e "s/%29/)/g" -e "s/%2C/,/g" -e "s/%23/#/g" -e "s/%22/\"/g" -e "s/%3C/</g" -e "s/%2F/\//g" -e "s/%3E/>/g" -e "s/%26/\&/g" -e "s/%7B/{/g" -e "s/%7D/}/g" -e "s/%5B/[/g" -e "s/%5D/]/g" -e "s/%5C/\\\/g" -e "s/%25/%/g" -e "s/%7C/|/g" -e "s/%09/ /g"
+	echo "$1" | sed -e "s/%40/@/g" -e "s/%60/\`/g" -e "s/+/ /g" -e "s/%3D/=/g" -e "s/%2B/+/g" -e "s/%3B/;/g" -e "s/%27/'/g" -e "s/%3A/:/g" -e "s/%28/(/g" -e "s/%29/)/g" -e "s/%2C/,/g" -e "s/%23/#/g" -e "s/%22/\"/g" -e "s/%3C/</g" -e "s/%2F/\//g" -e "s/%3E/>/g" -e "s/%26/\&/g" -e "s/%7B/{/g" -e "s/%7D/}/g" -e "s/%5B/[/g" -e "s/%5D/]/g" -e "s/%5C/\\\/g" -e "s/%25/%/g" -e "s/%7C/|/g" -e "s/%09/ /g" -e "s/%7E/~/g"
 }
 
 unescape_textarea()
@@ -229,12 +229,12 @@ replace_rollback()
 	rr_ncols=${#rr_cols[@]}
 	rr_maxidx=$(($rr_ncols - 1))
 	rr_rows=$(echo "$1" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES$//ig" -e "s/),(/\\\n/g"  -e "s/^ *(//g"  -e "s/), *(/\\\n/g" -e "s/) *;*$//g")
-	echo "$rr_rows" >> /tmp/zap
 	declare -A rr_iskey
 	IFS=" "; for rr_pos in $(echo "select REPLACE(GROUP_CONCAT(ORDINAL_POSITION), ',', ' ') from information_schema.KEY_COLUMN_USAGE where CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password")
 	do
 		rr_iskey[$(($rr_pos -1))]="y"
 	done
+	echo "-- Rollback instructions for query $qc"
 	IFS="
 "
 	for rr_row in $(echo -e "$rr_rows")
@@ -456,9 +456,13 @@ query_delete()
 	done
 	if [ $using_index -eq 0 ]
 	then
-		display "no indexed columns found in WHERE condition, query cannot be executed" 1
-		return
+		if [ $(num_rows) -ge 100000 ]
+		then
+			display "no indexed columns found in WHERE condition and table is large, query cannot be executed" 1
+			return
+		fi
 	fi
+	echo "-- Rollback instructions for query $qc" >> $rollback_file
 	if [ $(echo $table | fgrep -c "." ) -ne 0 ]
 	then
 		parsed_db=$(echo $table | cut -d"." -f 1)	
