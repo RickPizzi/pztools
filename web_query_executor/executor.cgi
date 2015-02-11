@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.6.6"
+VERSION="0.6.8"
 BASE=/usr/local/executor
 #
 post=0
@@ -226,6 +226,35 @@ replace_rollback()
 {
 	saveIFS="$IFS"
 	rr_cols=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d "[,]"))
+	rr_keys=($(echo "select concat(COLUMN_NAME,':',ORDINAL_POSITION - 1)  from information_schema.KEY_COLUMN_USAGE where CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password" | tr "[\n]" "[ ]"))
+	rr_columns=($(echo "set @cnt=-1; select concat(COLUMN_NAME,':',(@cnt := @cnt + 1)) from information_schema.COLUMNS where TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password"))
+	echo "-- Rollback instructions for query $qc"
+	IFS="
+"
+	rr_nkeys=0
+	rr_nkeys_used=0
+	for arg in ${rr_columns[@]}
+	do
+		rr_name=$(echo $arg | cut -d":" -f 1)
+		rr_idx=$(echo $arg | cut -d":" -f 2)
+		if [ ${rr_keys[$rr_idx]} != "" ]
+		then
+			rr_nkeys=$(($rr_nkeys + 1))
+			for arg2 in ${rr_cols[@]}
+			do
+				if [ "$arg2" = "$rr_name" ]
+				then
+					rr_nkeys_used=$(($rr_nkeys_used + 1))
+					break
+				fi
+			done
+		fi
+	done
+	if [ $rr_nkeys != $rr_nkeys_used ]
+	then
+		echo "-- REPLACE is not using primary key fully (pkcols: $rr_nkeys, used: $rr_nkeys_used), rollback not possible"
+		return
+	fi
 	rr_ncols=${#rr_cols[@]}
 	rr_maxidx=$(($rr_ncols - 1))
 	rr_rows=$(echo "$1" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES$//ig" -e "s/),(/\\\n/g"  -e "s/^ *(//g"  -e "s/), *(/\\\n/g" -e "s/) *;*$//g")
@@ -234,7 +263,6 @@ replace_rollback()
 	do
 		rr_iskey[$(($rr_pos -1))]="y"
 	done
-	echo "-- Rollback instructions for query $qc"
 	IFS="
 "
 	for rr_row in $(echo -e "$rr_rows")
@@ -604,10 +632,16 @@ query_update()
 		display "OR condition in WHERE is not supported" 1
 		return
 	fi
-	if [ $(array_idx "$where" "not") -ge 0 ]
+	notsrch=$(array_idx "$where" "not")
+	if [ $nsrch -ge 0 ]
 	then
-		display "NOT condition in WHERE is not supported as indexes would not be used" 1
-		return
+		nullsrch=$(array_idx "$where" "null")
+		nullsrch=$((nullsrch - 1))
+		if [ $nullsrch -ne $notsrch ]
+		then
+			display "NOT condition in WHERE is not supported as indexes would not be used" 1
+			return
+		fi
 	fi
 	rollback=0
 	wa=($(echo "$where" | sed -e "s/, /,/g"))
@@ -638,6 +672,7 @@ query_update()
 		#
 		#	WHERE key IN (....)
 		#
+		echo "-- Rollback instructions for query $qc" >> $rollback_file
 		[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 		for arg in ${in_set[@]}
 		do
