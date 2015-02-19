@@ -3,11 +3,12 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.6.8"
+VERSION="0.7.3"
 BASE=/usr/local/executor
 #
 post=0
 db=""
+default_db=""
 closing_tags="</FONT></BODY></HTML>"
 message=""
 dryrun=0
@@ -16,12 +17,17 @@ trap 'rm -f $tmpf' 0
 
 unescape_query()
 {
-	echo "$1" | sed -e "s/%40/@/g" -e "s/%60/\`/g" -e "s/+/ /g" -e "s/%3D/=/g" -e "s/%2B/+/g" -e "s/%3B/;/g" -e "s/%27/'/g" -e "s/%3A/:/g" -e "s/%28/(/g" -e "s/%29/)/g" -e "s/%2C/,/g" -e "s/%23/#/g" -e "s/%22/\"/g" -e "s/%3C/</g" -e "s/%2F/\//g" -e "s/%3E/>/g" -e "s/%26/\&/g" -e "s/%7B/{/g" -e "s/%7D/}/g" -e "s/%5B/[/g" -e "s/%5D/]/g" -e "s/%5C/\\\/g" -e "s/%25/%/g" -e "s/%7C/|/g" -e "s/%09/ /g" -e "s/%7E/~/g"
+	echo "$1" | sed -e "s/%40/@/g" -e "s/%60/\`/g" -e "s/+/ /g" -e "s/%3D/=/g" -e "s/%2B/+/g" -e "s/%3B/;/g" -e "s/%27/'/g" -e "s/%3A/:/g" -e "s/%28/(/g" -e "s/%29/)/g" -e "s/%2C/,/g" -e "s/%23/#/g" -e "s/%22/\"/g" -e "s/%3C/</g" -e "s/%2F/\//g" -e "s/%3E/>/g" -e "s/%26/\&/g" -e "s/%7B/{/g" -e "s/%7D/}/g" -e "s/%5B/[/g" -e "s/%5D/]/g" -e "s/%5C/\\\/g" -e "s/%25/%/g" -e "s/%7C/|/g" -e "s/%09/ /g" -e "s/%7E/~/g" -e "s/%80/\\x80/g" -e "s/%81/\\x81/g" -e "s/%82/\\x82/g" -e "s/%83/\\x83/g" -e "s/%84/\\x84/g" -e "s/%85/\\x85/g" -e "s/%86/\\x86/g" -e "s/%87/\\x87/g" -e "s/%88/\\x88/g" -e "s/%89/\\x89/g" -e "s/%8A/\\x8A/g" -e "s/%8B/\\x8B/g" -e "s/%8C/\\x8C/g" -e "s/%8D/\\x8D/g" -e "s/%8E/\\x8E/g" -e "s/%8F/\\x8F/g" -e "s/%90/\\x90/g" -e "s/%91/\\x91/g" -e "s/%92/\\x92/g" -e "s/%93/\\x93/g" -e "s/%94/\\x94/g" -e "s/%95/\\x95/g" -e "s/%96/\\x96/g" -e "s/%97/\\x97/g" -e "s/%98/\\x98/g" -e "s/%99/\\x99/g" -e "s/%9A/\\x9A/g" -e "s/%9B/\\x9B/g" -e "s/%9C/\\x9C/g" -e "s/%9D/\\x9D/g" -e "s/%9E/\\x9E/g" -e "s/%9F/\\x9F/g" -e "s/%A0/\\xA0/g" -e "s/%A1/\\xA1/g" -e "s/%A2/\\xA2/g" -e "s/%A3/\\xA3/g" -e "s/%A4/\\xA4/g" -e "s/%A5/\\xA5/g" -e "s/%A6/\\xA6/g" -e "s/%A7/\\xA7/g" -e "s/%A8/\\xA8/g" -e "s/%A9/\\xA9/g" -e "s/%AA/\\xAA/g" -e "s/%AB/\\xAB/g" -e "s/%AC/\\xAC/g" -e "s/%AD/\\xAD/g" -e "s/%AE/\\xAE/g" -e "s/%AF/\\xAF/g" -e "s/%B0/\\xB0/g" -e "s/%B1/\\xB1/g" -e "s/%B2/\\xB2/g" -e "s/%B3/\\xB3/g" -e "s/%B4/\\xB4/g" -e "s/%B5/\\xB5/g" -e "s/%B6/\\xB6/g" -e "s/%B7/\\xB7/g" -e "s/%B8/\\xB8/g" -e "s/%B9/\\xB9/g" -e "s/%BA/\\xBA/g" -e "s/%BB/\\xBB/g" -e "s/%BC/\\xBC/g" -e "s/%BD/\\xBD/g" -e "s/%BE/\\xBE/g" -e "s/%BF/\\xBF/g" -e "s/%C0/\\xC0/g" -e "s/%C1/\\xC1/g" -e "s/%C2/\\xC2/g" -e "s/%C3/\\xC3/g" -e "s/%C4/\\xC4/g" -e "s/%C5/\\xC5/g" -e "s/%C6/\\xC6/g" -e "s/%C7/\\xC7/g" -e "s/%C8/\\xC8/g" -e "s/%C9/\\xC9/g" -e "s/%CA/\\xCA/g" -e "s/%CB/\\xCB/g" -e "s/%CC/\\xCC/g" -e "s/%CD/\\xCD/g" -e "s/%CE/\\xCE/g" -e "s/%CF/\\xCF/g" -e "s/%D0/\\xD0/g" -e "s/%D1/\\xD1/g" -e "s/%D2/\\xD2/g" -e "s/%D3/\\xD3/g" -e "s/%D4/\\xD4/g" -e "s/%D5/\\xD5/g" -e "s/%D6/\\xD6/g" -e "s/%D7/\\xD7/g" -e "s/%D8/\\xD8/g" -e "s/%D9/\\xD9/g" -e "s/%DA/\\xDA/g" -e "s/%DB/\\xDB/g" -e "s/%DC/\\xDC/g" -e "s/%DD/\\xDD/g" -e "s/%DE/\\xDE/g" -e "s/%DF/\\xDF/g" -e "s/%E0/\\xE0/g" -e "s/%E1/\\xE1/g" -e "s/%E2/\\xE2/g" -e "s/%E3/\\xE3/g" -e "s/%E4/\\xE4/g" -e "s/%E5/\\xE5/g" -e "s/%E6/\\xE6/g" -e "s/%E7/\\xE7/g" -e "s/%E8/\\xE8/g" -e "s/%E9/\\xE9/g" -e "s/%EA/\\xEA/g" -e "s/%EB/\\xEB/g" -e "s/%EC/\\xEC/g" -e "s/%ED/\\xED/g" -e "s/%EE/\\xEE/g" -e "s/%EF/\\xEF/g" -e "s/%F0/\\xF0/g" -e "s/%F1/\\xF1/g" -e "s/%F2/\\xF2/g" -e "s/%F3/\\xF3/g" -e "s/%F4/\\xF4/g" -e "s/%F5/\\xF5/g" -e "s/%F6/\\xF6/g" -e "s/%F7/\\xF7/g" -e "s/%F8/\\xF8/g" -e "s/%F9/\\xF9/g" -e "s/%FA/\\xFA/g" -e "s/%FB/\\xFB/g" -e "s/%FC/\\xFC/g" -e "s/%FD/\\xFD/g" -e "s/%FE/\\xFE/g" -e "s/%FF/\\xFF/g"
 }
 
 unescape_textarea()
 {
-	[ $kill_backq -eq 0 ] && unescape_query "$1" | sed -e "s/%0D%0A/\n/g" || unescape_query "$1" | sed -e "s/%0D%0A/\n/g" -e "s/\`\.\`/./g" -e "s/\`/ /g"
+	if [ $kill_backq -eq 0 ]
+	then
+		unescape_query "$1" | sed -e "s/%0D%0A/\n/g"
+	else
+		unescape_query "$1" | sed -e "s/%0D%0A/\n/g" -e "s/\`\.\`/./g" -e "s/\`/ /g"
+	fi
 }
 
 unescape_execute()
@@ -53,14 +59,19 @@ debug() {
 show_form()
 {
 	printf "<FONT SIZE=2>Executor version: $VERSION<BR></FONT><BR>"
-	printf "<FORM METHOD=\"POST\" ACTION=\"$SCRIPT_NAME\">\n"
+	printf "<FORM METHOD=\"POST\" ACTION=\"$SCRIPT_NAME\" accept-charset=\"UTF-8\">\n"
 	printf "<TABLE>\n"
 	printf "<TR><TD>Host:</TD><TD><INPUT TYPE=TEXT NAME=\"host\" VALUE=\"$host\" MAXLENGTH=36 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>User:</TD><TD><INPUT TYPE=TEXT NAME=\"user\" VALUE=\"$user\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>Password:</TD><TD><INPUT TYPE=PASSWORD NAME=\"password\" VALUE=\"$password\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
-	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$db\" MAXLENGTH=32 SIZE=32></TD></TR>\n"
+	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$default_db\" MAXLENGTH=32 SIZE=32></TD></TR>\n"
 	printf "<TR><TD>Ticket #:</TD><TD><INPUT TYPE=TEXT NAME=\"ticket\" VALUE=\"$ticket\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
-	printf "<TR><TD>Remove backquotes:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"backq\" VALUE=\"on\" CHECKED></TD></TR>\n" 
+	if [ $kill_backq -eq 0 ]
+	then
+		printf "<TR><TD>Remove backquotes:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"backq\" VALUE=\"on\"></TD></TR>\n" 
+	else
+		printf "<TR><TD>Remove backquotes:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"backq\" VALUE=\"on\" CHECKED></TD></TR>\n" 
+	fi
 	[ $dryrun -eq 1 ] && textarea=$(escape_html "$(unescape_textarea $query)")
 	printf "<TR><TD COLSPAN=2><TEXTAREA NAME=\"query\" ROWS=8 COLS=200>%s</TEXTAREA></TD></TR>\n" "$textarea"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
@@ -106,15 +117,22 @@ post_checks()
 		post_error=1
 		return
 	fi
+	err=$(mysqladmin -u "$user" -p"$password" -h"$host" ping 2>&1 | fgrep error | cut -d":" -f2-)
+	if [ "$err" != "" ]
+	then
+		display "$err" 1
+		post_error=1
+		return
+	fi
 	if [ "$(echo "show variables like 'read_only'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>&1 | cut -f 2)" != "OFF" ]
 	then
 		display "This instance is READ ONLY" 1
 		post_error=1
 		return
 	fi
-	if [ "$db" != "" ]
+	if [ "$default_db" != "" ]
 	then
-		res=$(mysql -u "$user" -p"$password" -h"$host" "$db" 2>&1)
+		res=$(mysql -u "$user" -p"$password" -h"$host" "$default_db" 2>&1)
 		if [ "$res" != "" ]
 		then
 			display "$res" 1
@@ -131,10 +149,10 @@ run_statement()
 	last_id=""
 	case $2 in
 		0)
-			my_err=$(echo "$1; show warnings; select last_insert_id();" | mysql -u "$user" -p"$password" -h "$host" -vv "$db" 2>&1 | fgrep -v Bye)
+			my_err=$(echo "set names utf8; $1; show warnings; select last_insert_id();" | mysql -u "$user" -p"$password" -h "$host" -vv "$db" 2>&1 | fgrep -v Bye)
 			;;
 		1)
-			my_err=$(echo "begin; $1; show warnings; select last_insert_id(); rollback" | mysql -u "$user" -p"$password" -h "$host" -vv "$db" 2>&1 | fgrep -v Bye)
+			my_err=$(echo "set names utf8; begin; $1; show warnings; select last_insert_id(); rollback" | mysql -u "$user" -p"$password" -h "$host" -vv "$db" 2>&1 | fgrep -v Bye)
 			;;
 	esac
 	c=0
@@ -151,16 +169,16 @@ run_statement()
 		case $2 in
 			0)	case $c in
 					0) q_error="$row";;
-					2) q_result="$row";;
-					4) q_warning="$q_warning$(echo $row | fgrep Warning)";;
-					6) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
+					4) q_result="$row";;
+					6) q_warning="$q_warning$(echo $row | fgrep Warning)";;
+					8) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
 				esac
 				;;
 			1)	case $c in
 					0) q_error="$row";;
-					4) q_result="$row";;
-					6) q_warning="$q_warning$(echo $row | fgrep Warning)";;
-					8) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
+					6) q_result="$row";;
+					8) q_warning="$q_warning$(echo $row | fgrep Warning)";;
+					10) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
 				esac
 				;;
 		esac
@@ -225,89 +243,76 @@ num_rows()
 replace_rollback()
 {
 	saveIFS="$IFS"
-	rr_cols=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d "[,]"))
-	rr_keys=($(echo "select concat(COLUMN_NAME,':',ORDINAL_POSITION - 1)  from information_schema.KEY_COLUMN_USAGE where CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password" | tr "[\n]" "[ ]"))
-	rr_columns=($(echo "set @cnt=-1; select concat(COLUMN_NAME,':',(@cnt := @cnt + 1)) from information_schema.COLUMNS where TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password"))
+	rr_col_names=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d "[,]"))
+	rr_unique=$(echo "select CONSTRAINT_NAME from information_schema.TABLE_CONSTRAINTS where TABLE_SCHEMA = '$db' and TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE'" | mysql -ANr -h "$host" -u "$user" -p"$password")
+	if [ "$rr_unique" != "" ]
+	then
+		rr_ukeys=($(echo "select COLUMN_NAME from information_schema.KEY_COLUMN_USAGE where CONSTRAINT_NAME = '$rr_unique' AND TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password" | tr "[\n]" "[ ]"))
+	else
+		unset rr_ukeys
+	fi
+	rr_keys=($(echo "select COLUMN_NAME from information_schema.KEY_COLUMN_USAGE where CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password" | tr "[\n]" "[ ]"))
+	rr_columns=($(echo "select COLUMN_NAME from information_schema.COLUMNS where TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password"))
 	echo "-- Rollback instructions for query $qc"
 	IFS="
 "
-	rr_nkeys=0
+	rr_nkeys=${#rr_keys[@]}
+	rr_nukeys=${#rr_ukeys[@]}
 	rr_nkeys_used=0
-	for arg in ${rr_columns[@]}
+	rr_nukeys_used=0
+	for arg in ${rr_col_names[@]}
 	do
-		rr_name=$(echo $arg | cut -d":" -f 1)
-		rr_idx=$(echo $arg | cut -d":" -f 2)
-		if [ ${rr_keys[$rr_idx]} != "" ]
-		then
-			rr_nkeys=$(($rr_nkeys + 1))
-			for arg2 in ${rr_cols[@]}
-			do
-				if [ "$arg2" = "$rr_name" ]
-				then
-					rr_nkeys_used=$(($rr_nkeys_used + 1))
-					break
-				fi
-			done
-		fi
-	done
-	if [ $rr_nkeys != $rr_nkeys_used ]
-	then
-		echo "-- REPLACE is not using primary key fully (pkcols: $rr_nkeys, used: $rr_nkeys_used), rollback not possible"
-		return
-	fi
-	rr_ncols=${#rr_cols[@]}
-	rr_maxidx=$(($rr_ncols - 1))
-	rr_rows=$(echo "$1" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES$//ig" -e "s/),(/\\\n/g"  -e "s/^ *(//g"  -e "s/), *(/\\\n/g" -e "s/) *;*$//g")
-	declare -A rr_iskey
-	IFS=" "; for rr_pos in $(echo "select REPLACE(GROUP_CONCAT(ORDINAL_POSITION), ',', ' ') from information_schema.KEY_COLUMN_USAGE where CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password")
-	do
-		rr_iskey[$(($rr_pos -1))]="y"
-	done
-	IFS="
-"
-	for rr_row in $(echo -e "$rr_rows")
-	do
-		rr_saveIFS="$IFS"
-		IFS=","
-		rr_vals=($rr_row)
-		if [ ${#rr_vals[@]} -ne $rr_ncols ] 
-		then
-			echo "-- Cannot create rollback, columns mismatch (${#rr_vals[@]} != $rr_ncols ) for row: \"replace into $table (${rr_cols[@]}) values($rr_row)\""
-			IFS="$rr_saveIFS"
-			break
-		fi
-		IFS="$rr_saveIFS"
-		rr_kc=0
-		rr_where=$(for rr_s in $(seq 0 1 $rr_maxidx)
+		for arg2 in ${rr_keys[@]} 
 		do
-			if [ "${rr_iskey[$rr_s]}" != "" ]
-			then
-				[ $rr_kc -gt 0 ] && echo -n " AND "
-				echo -n "${rr_cols[$rr_s]} = ${rr_vals[$rr_s]}"
-				rr_kc=$(($rr_kc + 1))
-			fi
-		done)
-		#echo "DEBUG: where=\"$rr_where\"<br>"
-		rr_ins=$(
-			( 
-				echo -n "SET NAMES utf8; SELECT CONCAT_WS(',', "
-				for rr_s in $(seq 0 1 $rr_maxidx)
-				do
-					echo -n "IF(${rr_cols[$rr_s]} IS NULL,'NULL',CONCAT('\'', ${rr_cols[$rr_s]}, '\''))"
-					[ $rr_s -lt $rr_maxidx ] && echo -n ", "
-				done 
-				echo ") FROM $table WHERE $rr_where"
-			) | mysql -ANr -h "$host" -u "$user" -p"$password" "$db"
-		)
-		#echo "DEBUG: ins=\"$rr_ins\"<br>"
-		[ "$db" != "" ] && echo "USE $db"
-		echo "DELETE FROM $table WHERE $rr_where;"
-		for rr_row in $rr_ins
+			[ "$arg" = "$arg2" ] && rr_nkeys_used=$((rr_nkeys_used + 1))
+		done
+		for arg2 in ${rr_ukeys[@]} 
 		do
-			echo "INSERT INTO $table VALUES ($rr_row);"
+			[ "$arg" = "$arg2" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
 		done
 	done
-	IFS="$saveIFS"
+	if [ $rr_nkeys != $rr_nkeys_used -a $rr_nukeys != $rr_nukeys_used ]
+	then
+		echo "-- REPLACE is not using primary key or unique index fully (pk: $rr_nkeys/$rr_nkeys_used, unique: $rr_nukeys/$rr_nukeys_used), rollback not possible"
+		return
+	fi
+	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1 || rr_using_primary=0
+	for rr_row in $(echo "$1" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *;*$//g" | tr "[,]" "[ ]")
+	do
+		IFS=" " rr_col_values=($rr_row)
+		rr_idx=0
+		rr_where=""
+		while true
+		do
+			[ $rr_idx -eq ${#rr_col_names[@]} ] && break
+			case $rr_using_primary in
+				0)
+					for arg in ${rr_ukeys[@]} 
+					do
+						if [ "${rr_col_names[$rr_idx]}" = "$arg" ]
+						then
+							[ $rr_idx -gt 0 ] && rr_where="$rr_where AND"
+							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
+						fi
+					done
+					;;
+				1)
+					for arg in ${rr_keys[@]} 
+					do
+						if [ "${rr_col_names[$rr_idx]}" = "$arg" ]
+						then
+							[ $rr_idx -gt 0 ] && rr_where="$rr_where AND"
+							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
+						fi
+					done
+					;;
+			esac
+			rr_idx=$((rr_idx + 1))
+		done
+		echo "SET NAMES utf8;"
+		echo "DELETE FROM $table WHERE $rr_where;"
+		mysqldump --skip-opt --skip-trigger --compact --no-create-info --single-transaction --user "$user" --password="$password" --where "$rr_where" --host "$host" "$db" "$table" 
+	done
 }
 
 get_pk()
@@ -349,14 +354,15 @@ check_pk_use()
 check_table_presence()
 {
 	table_present=1
-	savedb=$db
 	if [ $(echo $table | fgrep -c "." ) -eq 0 ]
 	then
-		if [ "$db" = "" ]
+		if [ "$default_db" = "" ]
 		then
 			display "Default schema not set" 1
 			table_present=0
 			return
+		else
+			db=$default_db
 		fi
 	else
 		st=$table	
@@ -367,11 +373,9 @@ check_table_presence()
 	if [ $there -eq 0 ]
 	then
 		display "No table named \"$table\" in schema \"$db\"" 1
-		db=$savedb
 		table_present=0
 		return
 	fi
-	[ "$savedb" != "" ] && db=$savedb
 }
 
 check_columns()
@@ -539,7 +543,7 @@ query_insert()
 					echo "DELETE FROM $table WHERE $pk = '$last_id';" >> $rollback_file
 					display "AUTO-INC value assigned:  $last_id, rollback available" 3
 				else
-					echo "-- rollback not supported for: $1" >> $rollback_file
+					echo "-- rollback not supported for: ${1:0:60}..." >> $rollback_file
 				fi
 			else
 				replace_rollback "$1" >> $rollback_file
@@ -550,14 +554,14 @@ query_insert()
 		then
 			if [ $(is_autoinc) -eq 1 ]
 			then
-				echo "-- auto_increment PK detected, rollback will be available after execution: $1" >> $rollback_file
+				echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." >> $rollback_file
 			else
-				echo "-- rollback not supported for: $1" >> $rollback_file
+				echo "-- rollback not supported for: ${1:0:60}..." >> $rollback_file
 			fi
 		else
 			if [ $(echo "$1" | cut -d ")" -f 1 | fgrep -ic "VALUES") -eq 1 ]
 			then
-				echo "-- rollback not supported for: $1" >> $rollback_file
+				echo "-- rollback not supported for: ${1:0:60}..." >> $rollback_file
 			else
 				replace_rollback "$1"  >> $rollback_file
 			fi
@@ -805,7 +809,7 @@ process_query() {
 	display "" 0
 }
 
-printf "Content-Type: text/html\n\n"
+printf "Content-Type: text/html; charset=utf-8\n\n"
 printf "<HTML>\n"
 printf "<HEAD>\n"
 printf "<TITLE>Query Executor v%s</TITLE>\n" "$VERSION"
@@ -832,7 +836,7 @@ then
 			'user') user="$value";;
 			'password') password="$value";;
 			'host') host="$value";;
-			'schema') db="$value";;
+			'schema') default_db="$value";;
 			'query') query="$value";;
 			'ticket') ticket="$value";;
 			'dryrun') dryrun=0
