@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.7.4"
+VERSION="0.7.5"
 BASE=/usr/local/executor
 #
 post=0
@@ -290,9 +290,9 @@ replace_rollback()
 		return
 	fi
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1 || rr_using_primary=0
-	for rr_row in $(echo "$1" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *;*$//g" | tr "[,]" "[ ]")
+	for rr_row in $(echo "$1" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *;*$//g" | tr "[,]" "[\t]")
 	do
-		IFS=" " rr_col_values=($rr_row)
+		IFS="	" rr_col_values=($rr_row)
 		rr_idx=0
 		rr_where=""
 		while true
