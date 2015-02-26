@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.7.3"
+VERSION="0.7.4"
 BASE=/usr/local/executor
 #
 post=0
@@ -159,6 +159,7 @@ run_statement()
 	saveIFS="$IFS"
 	IFS="
 "
+	warnings=$(echo "$my_err" | fgrep "Warnings: " | cut -d":" -f 4)
 	for row in $(echo "$my_err")
 	do
 		if [ "$row" = "--------------" ]
@@ -170,14 +171,26 @@ run_statement()
 			0)	case $c in
 					0) q_error="$row";;
 					4) q_result="$row";;
-					6) q_warning="$q_warning$(echo $row | fgrep Warning)";;
+					6) if [ $warnings -gt 0 ]
+					   then
+						if [ $(echo $row | fgrep -c "rows in set") -eq 0 ]
+						then
+							q_warning="$q_warning$row<br>"
+						fi
+					   fi;;
 					8) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
 				esac
 				;;
 			1)	case $c in
 					0) q_error="$row";;
 					6) q_result="$row";;
-					8) q_warning="$q_warning$(echo $row | fgrep Warning)";;
+					8) if [ $warnings -gt 0 ]
+					   then
+						if [ $(echo $row | fgrep -c "rows in set") -eq 0 ]
+						then
+							q_warning="$q_warning$row<br>"
+						fi
+					   fi;;
 					10) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
 				esac
 				;;
