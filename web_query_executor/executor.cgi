@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.8.1"
+VERSION="0.8.2"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -355,9 +355,14 @@ is_autoinc()
 	echo "select extra from information_schema.columns where table_schema = '$db' and table_name = '$table' and column_name = '$pk'" | mysql -ANr -h "$host" -u "$user" -p"$password" | fgrep -c auto_increment
 }
 			
-is_index()
+index_name()
 {
-	echo "show index from $table where Column_name = '$1' and Seq_in_index = 1" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db" | wc -l
+	echo "select CONSTRAINT_NAME from information_schema.KEY_COLUMN_USAGE where TABLE_SCHEMA = '$db' and TABLE_NAME = '$table' and COLUMN_NAME = '$1' AND REFERENCED_COLUMN_NAME IS NULL" | mysql -ANr -h "$host" -u "$user" -p"$password"
+}
+
+index_parts()
+{
+	echo "select count(*) from information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' and CONSTRAINT_NAME = '$1'" | mysql -ANr -h "$host" -u "$user" -p"$password"
 }
 
 check_pk_use()
@@ -504,22 +509,32 @@ query_delete()
 	fi
 	IFS="
 "
-	using_index=0
 	wa=$(echo $where | sed -e "s/ AND /\\\n/gI" -e "s/ in /=/gI")
+	using_index=1
+	prvidxname=""
+	c=0
 	for row in $(echo -e $wa)
 	do
 		fld=$(echo $row | cut -d"=" -f 1 | tr -d "[ ]")
-		if [ $(is_index $fld) -eq 1 ] 
+		idxname=$(index_name $fld)
+		if [ "$prvidxname" != "$idxname" ]
 		then
-			using_index=1
-			break
+			if [ "$prvidxname" = "" ]
+			then
+				prvidxname="$idxname"
+				idxcount=$(index_parts $idxname)
+			else
+				using_index=0
+				break	
+			fi
 		fi
+		c=$((c + 1))
 	done
-	if [ $using_index -eq 0 ]
+	if [ $using_index -eq 0 -o $c -ne $idxcount ]
 	then
 		if [ $(num_rows) -ge 100000 ]
 		then
-			display "no indexed columns found in WHERE condition and table is large, query cannot be executed" 1
+			display "WHERE condition not using an index and table is large, query cannot be executed" 1
 			return
 		fi
 	fi
