@@ -301,7 +301,6 @@ replace_rollback()
 		fi
 	fi
 	if [ $rr_nkeys != $rr_nkeys_used -a "$rr_unique" = "" ]
--a $rr_nukeys != $rr_nukeys_used ]
 	then
 		echo "-- REPLACE is not using primary key fully (pk: $rr_nkeys/$rr_nkeys_used, unique: $rr_nukeys/$rr_nukeys_used), rollback not possible"
 		return
