@@ -3,15 +3,16 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.7.5"
+VERSION="0.8.1"
 BASE=/usr/local/executor
+MAX_QUERIES=500
 #
 post=0
+dryrun=0
 db=""
 default_db=""
 closing_tags="</FONT></BODY></HTML>"
 message=""
-dryrun=0
 tmpf=/tmp/executor.$$
 trap 'rm -f $tmpf' 0
 
@@ -78,6 +79,7 @@ show_form()
 	printf "<TR><TD COLSPAN=2><B><PRE>$message</PRE></B></TD></TR>\n"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
 	[ $dryrun -eq 1 ] && checkbox="CHECKED"
+	[ $((qc - 1)) -gt $MAX_QUERIES ] && printf "<INPUT TYPE=\"HIDDEN\" NAME=\"overflow\" VALUE=1>\n"
 	printf "<TR><TD>Dry Run:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"dryrun\" VALUE=\"on\" %s></TD></TR>\n" "$checkbox"
 	printf "<TR><TD COLSPAN=2><INPUT TYPE=\"SUBMIT\" VALUE=\"Execute\">\n"
 	printf "</TABLE>\n"
@@ -284,9 +286,24 @@ replace_rollback()
 			[ "$arg" = "$arg2" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
 		done
 	done
-	if [ $rr_nkeys != $rr_nkeys_used -a $rr_nukeys != $rr_nukeys_used ]
+	if [ $rr_nkeys != $rr_nkeys_used ]
 	then
-		echo "-- REPLACE is not using primary key or unique index fully (pk: $rr_nkeys/$rr_nkeys_used, unique: $rr_nukeys/$rr_nukeys_used), rollback not possible"
+		if [ "$rr_unique" = "" ]
+		then
+			echo "-- REPLACE is not using primary key fully (cols needed $rr_nkeys, used $rr_nkeys_used). Rollback not possible"
+			return
+		else
+			if [ $rr_nukeys != $rr_nukeys_used ]
+			then
+				echo "-- REPLACE is not using unique index fully (cols needed $rr_nukeys, used $rr_nukeys_used). Rollback not possible"
+				return
+			fi
+		fi
+	fi
+	if [ $rr_nkeys != $rr_nkeys_used -a "$rr_unique" = "" ]
+-a $rr_nukeys != $rr_nukeys_used ]
+	then
+		echo "-- REPLACE is not using primary key fully (pk: $rr_nkeys/$rr_nkeys_used, unique: $rr_nukeys/$rr_nukeys_used), rollback not possible"
 		return
 	fi
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1 || rr_using_primary=0
@@ -684,6 +701,11 @@ query_update()
 			display "Sorry, this tool does not support WHERE conditions with a mix of \"=\" and IN() at this time" 1
 			return
 		fi
+		if [ $(echo $where | fgrep -ic "and") -ne 0 ]
+		then
+			display "Sorry, this tool does not support WHERE conditions with multiple IN()s at this time" 1
+			return
+		fi
 		c=$(($in + 1))
 		IFS="," in_set=($(echo "${wa[@]:$c}" | tr -d "[()]"))
 		#
@@ -852,7 +874,8 @@ then
 			'schema') default_db="$value";;
 			'query') query="$value";;
 			'ticket') ticket="$value";;
-			'dryrun') dryrun=0
+			'overflow') dryrun="$value";;
+			'dryrun') 
 				[ "$value" = "on" ] && dryrun=1
 				;;
 			'backq') kill_backq=0
@@ -919,8 +942,13 @@ then
 			fi
 			if [ $dryrun -eq 1 ]
 			then
-				show_rollback $rollback_file
-				display "This was a dry run. Please verify the rollback code above, then remove the flag to execute the query." 2
+				if [ $((qc - 1)) -gt $MAX_QUERIES ]
+				then
+					display "Maximum number of queries ($MAX_QUERIES) exceeded. Please remove some of them in order to be able to execute your statements." 1
+				else
+					show_rollback $rollback_file
+					display "This was a dry run. Please verify the rollback code above, then remove the flag to execute the query." 2
+				fi
 				rm -f $rollback_file ${rollback_file}_*_dump.gz 
 			else
 				display "Done. Rollback statements saved in $rollback_file on $(hostname)". 0
