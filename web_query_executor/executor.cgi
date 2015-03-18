@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.8.2"
+VERSION="0.8.5"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -161,7 +161,7 @@ run_statement()
 	saveIFS="$IFS"
 	IFS="
 "
-	warnings=$(echo "$my_err" | fgrep "Warnings: " | cut -d":" -f 4)
+	warnings=$(echo "$my_err" | fgrep -c "Warning")
 	for row in $(echo "$my_err")
 	do
 		if [ "$row" = "--------------" ]
@@ -175,7 +175,7 @@ run_statement()
 					4) q_result="$row";;
 					6) if [ $warnings -gt 0 ]
 					   then
-						if [ $(echo $row | fgrep -c "rows in set") -eq 0 ]
+						if [ $(echo $row | fgrep -c " in set") -eq 0 ]
 						then
 							q_warning="$q_warning$row<br>"
 						fi
@@ -188,7 +188,7 @@ run_statement()
 					6) q_result="$row";;
 					8) if [ $warnings -gt 0 ]
 					   then
-						if [ $(echo $row | fgrep -c "rows in set") -eq 0 ]
+						if [ $(echo $row | fgrep -c " in set") -eq 0 ]
 						then
 							q_warning="$q_warning$row<br>"
 						fi
@@ -290,20 +290,15 @@ replace_rollback()
 	then
 		if [ "$rr_unique" = "" ]
 		then
-			echo "-- REPLACE is not using primary key fully (cols needed $rr_nkeys, used $rr_nkeys_used). Rollback not possible"
+			echo "-- $2 is not using primary key fully (cols needed $rr_nkeys, used $rr_nkeys_used). Rollback not possible"
 			return
 		else
 			if [ $rr_nukeys != $rr_nukeys_used ]
 			then
-				echo "-- REPLACE is not using unique index fully (cols needed $rr_nukeys, used $rr_nukeys_used). Rollback not possible"
+				echo "-- $2 is not using unique index fully (cols needed $rr_nukeys, used $rr_nukeys_used). Rollback not possible"
 				return
 			fi
 		fi
-	fi
-	if [ $rr_nkeys != $rr_nkeys_used -a "$rr_unique" = "" ]
-	then
-		echo "-- REPLACE is not using primary key fully (pk: $rr_nkeys/$rr_nkeys_used, unique: $rr_nukeys/$rr_nukeys_used), rollback not possible"
-		return
 	fi
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1 || rr_using_primary=0
 	for rr_row in $(echo "$1" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *;*$//g" | tr "[,]" "[\t]")
@@ -571,8 +566,11 @@ query_insert()
 		return
 	fi
 	table="${q[2]}"
+	echo $table | fgrep -q "(" && table=$(echo $table | cut -d "(" -f 1)
 	check_table_presence
 	[ $table_present -ne 1 ] && return
+	display "Schema: $db" 0
+	display "Table: $table" 0
 	run_statement "$1" $dryrun
 	if [ $dryrun -eq 0 ]
 	then
@@ -590,7 +588,7 @@ query_insert()
 					echo "-- rollback not supported for: ${1:0:60}..." >> $rollback_file
 				fi
 			else
-				replace_rollback "$1" >> $rollback_file
+				replace_rollback "$1" "${3,,}" >> $rollback_file
 			fi
 		fi
 	else
@@ -600,14 +598,14 @@ query_insert()
 			then
 				echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." >> $rollback_file
 			else
-				echo "-- rollback not supported for: ${1:0:60}..." >> $rollback_file
+				replace_rollback "$1" "${3,,}" >> $rollback_file
 			fi
 		else
 			if [ $(echo "$1" | cut -d ")" -f 1 | fgrep -ic "VALUES") -eq 1 ]
 			then
 				echo "-- rollback not supported for: ${1:0:60}..." >> $rollback_file
 			else
-				replace_rollback "$1"  >> $rollback_file
+				replace_rollback "$1" "${3,,}" >> $rollback_file
 			fi
 		fi
 	fi
@@ -703,7 +701,7 @@ query_update()
 		t_rows=$(num_rows)
 		if [ $t_rows -gt 1000000 ]
 		then
-			display "WARNING: large table $table: $t_rows rows, and query not using PK. Rollback generation will take some time" 3
+			display "WARNING: large table $table: $t_rows rows, and query not using PK. Rollback generation could take some time" 3
 		fi
 		pkwa=1
 	fi
