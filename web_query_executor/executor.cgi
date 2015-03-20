@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.8.5"
+VERSION="0.8.8"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -64,7 +64,7 @@ show_form()
 	printf "<TABLE>\n"
 	printf "<TR><TD>Host:</TD><TD><INPUT TYPE=TEXT NAME=\"host\" VALUE=\"$host\" MAXLENGTH=36 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>User:</TD><TD><INPUT TYPE=TEXT NAME=\"user\" VALUE=\"$user\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
-	printf "<TR><TD>Password:</TD><TD><INPUT TYPE=PASSWORD NAME=\"password\" VALUE=\"$password\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
+	printf "<TR><TD>Password:</TD><TD><INPUT TYPE=PASSWORD NAME=\"password\" VALUE=\"$password\" MAXLENGTH=40 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$default_db\" MAXLENGTH=32 SIZE=32></TD></TR>\n"
 	printf "<TR><TD>Ticket #:</TD><TD><INPUT TYPE=TEXT NAME=\"ticket\" VALUE=\"$ticket\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
 	if [ $kill_backq -eq 0 ]
@@ -161,7 +161,7 @@ run_statement()
 	saveIFS="$IFS"
 	IFS="
 "
-	warnings=$(echo "$my_err" | fgrep -c "Warning")
+	warnings=$(echo "$my_err" | fgrep -v "Warnings: 0" | fgrep -c "Warning")
 	for row in $(echo "$my_err")
 	do
 		if [ "$row" = "--------------" ]
@@ -258,7 +258,15 @@ num_rows()
 replace_rollback()
 {
 	saveIFS="$IFS"
-	rr_col_names=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d "[,]"))
+	case "$3" in
+		0) 	rr_col_names=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d "[,]"))
+			rr_q="$1"
+			;;
+		1) 	rr_col_names_c=$(echo "select GROUP_CONCAT(COLUMN_NAME) from information_schema.COLUMNS where TABLE_SCHEMA = '$db' and TABLE_NAME = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password")
+			rr_col_names=($(echo $rr_col_names_c | tr "[,]" "[ ]"))
+			rr_q=$(echo "$1" | sed -e "s/VALUES/($rr_col_names_c) values/gi")
+			;;
+	esac
 	rr_unique=$(echo "select CONSTRAINT_NAME from information_schema.TABLE_CONSTRAINTS where TABLE_SCHEMA = '$db' and TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE'" | mysql -ANr -h "$host" -u "$user" -p"$password")
 	if [ "$rr_unique" != "" ]
 	then
@@ -267,10 +275,8 @@ replace_rollback()
 		unset rr_ukeys
 	fi
 	rr_keys=($(echo "select COLUMN_NAME from information_schema.KEY_COLUMN_USAGE where CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password" | tr "[\n]" "[ ]"))
-	rr_columns=($(echo "select COLUMN_NAME from information_schema.COLUMNS where TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password"))
 	echo "-- Rollback instructions for query $qc"
-	IFS="
-"
+	IFS="	"
 	rr_nkeys=${#rr_keys[@]}
 	rr_nukeys=${#rr_ukeys[@]}
 	rr_nkeys_used=0
@@ -301,9 +307,12 @@ replace_rollback()
 		fi
 	fi
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1 || rr_using_primary=0
-	for rr_row in $(echo "$1" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *;*$//g" | tr "[,]" "[\t]")
+	IFS="
+"
+	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *;*$//g" | tr "[,]" "[\t]")
 	do
-		IFS="	" rr_col_values=($rr_row)
+		IFS="	"
+		rr_col_values=($rr_row)
 		rr_idx=0
 		rr_where=""
 		while true
@@ -336,6 +345,8 @@ replace_rollback()
 		echo "SET NAMES utf8;"
 		echo "DELETE FROM $table WHERE $rr_where;"
 		mysqldump --skip-opt --skip-trigger --compact --no-create-info --single-transaction --user "$user" --password="$password" --where "$rr_where" --host "$host" "$db" "$table" 
+		IFS="
+"
 	done
 }
 
@@ -566,6 +577,7 @@ query_insert()
 		return
 	fi
 	table="${q[2]}"
+	[ "${q[3],,}" = "values" ] && nocols=1 || nocols=0
 	echo $table | fgrep -q "(" && table=$(echo $table | cut -d "(" -f 1)
 	check_table_presence
 	[ $table_present -ne 1 ] && return
@@ -588,7 +600,7 @@ query_insert()
 					echo "-- rollback not supported for: ${1:0:60}..." >> $rollback_file
 				fi
 			else
-				replace_rollback "$1" "${3,,}" >> $rollback_file
+				replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
 			fi
 		fi
 	else
@@ -598,15 +610,10 @@ query_insert()
 			then
 				echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." >> $rollback_file
 			else
-				replace_rollback "$1" "${3,,}" >> $rollback_file
+				replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
 			fi
 		else
-			if [ $(echo "$1" | cut -d ")" -f 1 | fgrep -ic "VALUES") -eq 1 ]
-			then
-				echo "-- rollback not supported for: ${1:0:60}..." >> $rollback_file
-			else
-				replace_rollback "$1" "${3,,}" >> $rollback_file
-			fi
+			replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
 		fi
 	fi
 }
