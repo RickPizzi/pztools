@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.8.11"
+VERSION="0.8.12"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -677,7 +677,8 @@ query_update()
 	IFS="	"
 	for arg in ${cs[@]}
 	do
-		[ $(echo $arg | fgrep -c "=") -eq 1 ] && cols="$cols$(echo $arg | cut -d"=" -f 1) "
+		# TODO: need to find a way to detect whether the equal sign is inside a string or not...
+		[ $(echo $arg | fgrep -v '=\"' | fgrep -c "=") -eq 1 ] && cols="$cols$(echo $arg | cut -d"=" -f 1) "
 	done
 	IFS="$saveIFS"
 	#display "Cols: $cols" 0
@@ -847,6 +848,13 @@ pretty_print()
 	done
 }
 
+open_quotes()
+{
+	niq=$(echo "$1" | sed -e "s/\\\'//g")
+	nniq=${niq//[^\']}
+	printf "%d %% 2\n" ${#nniq} | bc
+}
+
 process_query() {
 	IFS=" " q=($(echo "$1" | sed -e "s/^ *//") )
 	display "----- Processing query #$2 ------" 2
@@ -944,12 +952,12 @@ then
 				for q in $(unescape_execute "$query")
 				do
 					[ "$(echo -n $q | tr -d '[ ]')" = "" ] && continue
-					if [ $(printf "%d %% 2\n" ${#${q//[^\']}} | bc) -eq 1 ]
+					if [ $(open_quotes "$q") -eq 1 ]
 					then
 						if [ $qo -eq 0 ]
 						then
 							qo=1
-							lq="$lq$q"
+							lq="$lq$q;"
 							continue
 						else
 							qo=0
@@ -959,7 +967,7 @@ then
 					else
 						if [ $qo -eq 1 ]
 						then
-							lq="$lq$q"
+							lq="$lq$q;"
 							continue
 						fi
 					fi
