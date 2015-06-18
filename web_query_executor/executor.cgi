@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.8.12"
+VERSION="0.8.13"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -526,20 +526,20 @@ query_delete()
 	wa=$(echo $where | sed -e "s/ AND /\\\n/gI" -e "s/ in /=/gI")
 	using_index=1
 	prvidxname=""
-	c=0
+	c=1
 	# this should be modified to look for leftmost parts of PK and index
 	for row in $(echo -e $wa)
 	do
 		fld=$(echo $row | cut -d"=" -f 1 | tr -d "[ ]")
 		idxname=$(index_name $fld)
+		idxcount=$(index_parts $idxname)
 		if [ "$prvidxname" != "$idxname" ]
 		then
 			if [ "$prvidxname" = "" ]
 			then
 				prvidxname="$idxname"
-				idxcount=$(index_parts $idxname)
 			else
-				using_index=0
+				[ $c -le $idxcount ] && using_index=0
 				break	
 			fi
 		fi
