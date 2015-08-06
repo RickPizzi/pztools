@@ -1,0 +1,12 @@
+DBGranter
+
+a CGI script written in bash that can be used to quickly edit basic grants for a MySQL user.
+
+The user using this tool must have proper grants on the database from the host the CGI script runs from (GRANT OPTION).
+
+The script runs under apache httpd, put it in the cgi-bin directory and configure accordingly.
+ 
+WATCH OUT: this is early stage software. Bugs are there. 
+
+Feedbacks welcome!
+Enjoy
