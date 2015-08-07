@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-VERSION="0.1.3"
+VERSION="0.2.1"
 closing_tags="</FONT></BODY></HTML>"
 lgrant=""
 rgrant=""
@@ -90,12 +90,10 @@ post_checks()
 		post_error=1
 		return
         fi
-	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]")
+	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]" | fgrep $schema)
 	if [ "$grants" = "" ]
 	then
-		display "no grants found for '$lgrant'@'$rgrant'" 1
-		post_error=1
-		return
+		display "WARNING: no grants found for '$lgrant'@'$rgrant'" 2
 	fi
 }
 
@@ -136,22 +134,22 @@ format()
 	if [[ $2 == *"SELECT"* ]] 
 	then
 		s=" CHECKED"
-		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oselect\"%s>\n" "$1" 
+		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oselect\">\n" "$1" 
 	fi
 	if [[ $2 == *"INSERT"* ]] 
 	then
 		i=" CHECKED"
-		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oinsert\"%s>\n" "$1" 
+		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oinsert\">\n" "$1" 
 	fi
 	if [[ $2 == *"UPDATE"* ]] 
 	then
 		u=" CHECKED"
-		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oupdate\"%s>\n" "$1" 
+		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oupdate\">\n" "$1" 
 	fi
 	if [[ $2 == *"DELETE"* ]] 
 	then
 		d=" CHECKED"
-		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"odelete\"%s>\n" "$1" 
+		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"odelete\">\n" "$1" 
 	fi
 	printf "S <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"select\"%s>\n" "$1" "$s" 
 	printf "I <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"insert\"%s>\n" "$1" "$i"
@@ -218,8 +216,10 @@ parse_grants()
 			w=$(($idx + 2))
 			tschema=$(echo ${ga[$w]} | cut -d "." -f 1)
 			table=$(echo ${ga[$w]} | cut -d "." -f 2)
+			[ "$table" = "*" ] && table=".ALL_TABLES."
 			echo "$tschema $table $what"
 		done 
+		echo "$schema .ALL_TABLES. .none"
 		echo "select concat('$schema', ' ', table_name, ' .none') from information_schema.tables where table_schema  = '$schema'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null 
 	) | sort > $tmpf
 	printf "<TABLE>\n" 
@@ -233,11 +233,12 @@ parse_grants()
 		IFS=" "
 		ga=($row)
 		gn=$((${#ga[@]} - 2))
-		if [ "${ga[0]}.${ga[1]}" != "$prev01" ]
+		[ "${ga[1]}" = ".ALL_TABLES." ] && t="${ga[0]}.*" || t="${ga[0]}.${ga[1]}"
+		if [ "$t" != "$prev01" ]
 		then
 			[ "$prev01" != "" ] && printf "<TR><TD><FONT FACE=\"Arial\" SIZE=2>%s</FONT><TD><TD><FONT FACE=\"Arial\" SIZE=2>%s</FONT></TD></TR>\n" "$prev01" "$(format $prev01 $prev2)"
 		fi
-		prev01="${ga[0]}.${ga[1]}"
+		[ "${ga[1]}" = ".ALL_TABLES." ] && prev01="${ga[0]}.*" || prev01="${ga[0]}.${ga[1]}"
 		prev2="${ga[2]}"
 	done
 	printf "<TR><TD><FONT FACE=\"Arial\" SIZE=2>%s</FONT><TD><TD><FONT FACE=\"Arial\" SIZE=2>%s</FONT></TD></TR>\n" "$prev01" "$(format $prev01 $prev2)"
