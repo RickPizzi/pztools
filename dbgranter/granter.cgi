@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-VERSION="0.2.2"
+VERSION="0.3.1"
 closing_tags="</FONT></BODY></HTML>"
 lgrant=""
 rgrant=""
@@ -8,6 +8,7 @@ grants=""
 changes=0
 tmpf=/tmp/dbgranter.$$
 trap 'rm -f $tmpf 0'
+set -f
 #
 
 unescape_input()
