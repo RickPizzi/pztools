@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-VERSION="0.2.1"
+VERSION="0.2.2"
 closing_tags="</FONT></BODY></HTML>"
 lgrant=""
 rgrant=""
@@ -90,6 +90,13 @@ post_checks()
 		post_error=1
 		return
         fi
+	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]" | fgrep USAGE)
+	if [ "$grants" = "" ]
+	then
+		display "No USAGE for '$lgrant'@'$rgrant'" 1
+		post_error=1
+		return
+	fi
 	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]" | fgrep $schema)
 	if [ "$grants" = "" ]
 	then
