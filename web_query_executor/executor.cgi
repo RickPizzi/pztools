@@ -3,10 +3,11 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.8.18"
+VERSION="0.9.1"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
+set -f
 post=0
 dryrun=0
 db=""
@@ -43,12 +44,11 @@ escape_html()
 }
 
 display() {
-	escaped=$(echo "$1" | sed -e "s/\%/%%/g")
 	case "$2" in
-		0) message="$message$escaped<BR>";;
-		1) message="$message<FONT COLOR=\"Red\">ERROR: $escaped</FONT><BR>";;
-		2) message="$message<FONT COLOR=\"Green\">$escaped</FONT><BR>";;
-		3) message="$message<FONT COLOR=\"Orange\">$escaped</FONT><BR>";;
+		0) message="$message$1<BR>";;
+		1) message="$message<FONT COLOR=\"Red\">ERROR: $1</FONT><BR>";;
+		2) message="$message<FONT COLOR=\"Green\">$1</FONT><BR>";;
+		3) message="$message<FONT COLOR=\"Orange\">$1</FONT><BR>";;
 	esac
 }
 
@@ -77,7 +77,7 @@ show_form()
 	[ $dryrun -eq 1 ] && textarea=$(escape_html "$(unescape_textarea $query)")
 	printf "<TR><TD COLSPAN=2><TEXTAREA NAME=\"query\" ROWS=8 COLS=200>%s</TEXTAREA></TD></TR>\n" "$textarea"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
-	printf "<TR><TD COLSPAN=2><B><PRE>$message</PRE></B></TD></TR>\n"
+	printf "<TR><TD COLSPAN=2><B><PRE>%s</PRE></B></TD></TR>\n" "$message"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
 	[ $dryrun -eq 1 ] && checkbox="CHECKED"
 	[ $((qc - 1)) -gt $MAX_QUERIES ] && printf "<INPUT TYPE=\"HIDDEN\" NAME=\"overflow\" VALUE=1>\n"
@@ -863,7 +863,8 @@ open_quotes()
 }
 
 process_query() {
-	IFS=" " q=($(echo "$1" | sed -e "s/^ *//") )
+	q_nb=$(echo "$1" | sed -e "s/^ *//")
+	IFS=" " q=($q_nb)
 	display "----- Processing query #$2 ------" 2
 	dq="${q[@]}"
 	dqq=$(pretty_print "$dq")
