@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.9.1"
+VERSION="0.10.1"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -300,11 +300,11 @@ replace_rollback()
 	do
 		for arg2 in ${rr_keys[@]} 
 		do
-			[ "$arg" = "$arg2" ] && rr_nkeys_used=$((rr_nkeys_used + 1))
+			[ "${arg,,}" = "${arg2,,}" ] && rr_nkeys_used=$((rr_nkeys_used + 1))
 		done
 		for arg2 in ${rr_ukeys[@]} 
 		do
-			[ "$arg" = "$arg2" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
+			[ "${arg,,}" = "${arg2,,}" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
 		done
 	done
 	if [ $rr_nkeys != $rr_nkeys_used ]
@@ -337,7 +337,7 @@ replace_rollback()
 				0)
 					for arg in ${rr_ukeys[@]} 
 					do
-						if [ "${rr_col_names[$rr_idx]}" = "$arg" ]
+						if [ "${rr_col_names[$rr_idx],,}" = "${arg,,}" ]
 						then
 							[ $rr_idx -gt 0 ] && rr_where="$rr_where AND"
 							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
@@ -347,7 +347,7 @@ replace_rollback()
 				1)
 					for arg in ${rr_keys[@]} 
 					do
-						if [ "${rr_col_names[$rr_idx]}" = "$arg" ]
+						if [ "${rr_col_names[$rr_idx],,}" = "${arg,,}" ]
 						then
 							[ $rr_idx -gt 0 ] && rr_where="$rr_where AND"
 							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
@@ -585,7 +585,7 @@ query_delete()
 query_insert()
 {
 	display "Query type: ${3^^}" 0
-	IFS=" " q=($1)
+	IFS=" " q=($(echo $1 | sed -e "s/(/ (/ig"))
 	query_id=$2
 	if [ "${q[1],,}" != "into" ]
 	then
@@ -723,7 +723,7 @@ query_update()
 	then
 		display "NOTICE: WHERE condition not using PK, switching to PK for safe rollback" 0
 		t_rows=$(num_rows)
-		if [ $t_rows -gt 1000000 ]
+		if [ $t_rows -gt 1000000 -a $dryrun -eq 1 ]
 		then
 			display "WARNING: large table $table: $t_rows rows, and query not using PK. Rollback generation could take some time" 3
 		fi
