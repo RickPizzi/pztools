@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.10.1"
+VERSION="0.10.2"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -298,13 +298,14 @@ replace_rollback()
 	rr_nukeys_used=0
 	for arg in ${rr_col_names[@]}
 	do
+		nobq="${arg//\`}"
 		for arg2 in ${rr_keys[@]} 
 		do
-			[ "${arg,,}" = "${arg2,,}" ] && rr_nkeys_used=$((rr_nkeys_used + 1))
+			[ "${nobq,,}" = "${arg2,,}" ] && rr_nkeys_used=$((rr_nkeys_used + 1))
 		done
 		for arg2 in ${rr_ukeys[@]} 
 		do
-			[ "${arg,,}" = "${arg2,,}" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
+			[ "${nobq,,}" = "${arg2,,}" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
 		done
 	done
 	if [ $rr_nkeys != $rr_nkeys_used ]
@@ -337,7 +338,8 @@ replace_rollback()
 				0)
 					for arg in ${rr_ukeys[@]} 
 					do
-						if [ "${rr_col_names[$rr_idx],,}" = "${arg,,}" ]
+						nobq="${rr_col_names[$rr_idx]//\`}"
+						if [ "${nobq,,}" = "${arg,,}" ]
 						then
 							[ $rr_idx -gt 0 ] && rr_where="$rr_where AND"
 							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
@@ -347,7 +349,8 @@ replace_rollback()
 				1)
 					for arg in ${rr_keys[@]} 
 					do
-						if [ "${rr_col_names[$rr_idx],,}" = "${arg,,}" ]
+						nobq="${rr_col_names[$rr_idx]//\`}"
+						if [ "${nobq,,}" = "${arg,,}" ]
 						then
 							[ $rr_idx -gt 0 ] && rr_where="$rr_where AND"
 							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
