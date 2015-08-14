@@ -1,7 +1,8 @@
 #!/bin/bash
 #
-VERSION="0.3.2"
+VERSION="0.3.4"
 closing_tags="</FONT></BODY></HTML>"
+genprivs="USAGE|FILE|PROCESS"
 lgrant=""
 rgrant=""
 grants=""
@@ -91,14 +92,14 @@ post_checks()
 		post_error=1
 		return
         fi
-	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]" | fgrep USAGE)
+	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]" | egrep "$genprivs")
 	if [ "$grants" = "" ]
 	then
 		display "No USAGE for '$lgrant'@'$rgrant'" 1
 		post_error=1
 		return
 	fi
-	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]" | fgrep $schema)
+	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]" | fgrep "ON $schema.")
 	if [ "$grants" = "" ]
 	then
 		display "WARNING: no grants found for '$lgrant'@'$rgrant'" 2
