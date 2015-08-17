@@ -1,6 +1,16 @@
 #!/bin/bash
 #
-VERSION="0.3.4"
+VERSION="0.4.2"
+#
+# NOTICE: CONFIG FILE
+# Config file /etc/dbgranter.conf should contain the following:
+#	user=tool_user
+#	password=tool_password
+# this user needs SELECT privileges on all schemas from the machine the tool runs on
+#
+service_user=$(grep ^user /etc/dbgranter.conf | cut -d"=" -f 2)
+service_password=$(grep ^password /etc/dbgranter.conf | cut -d"=" -f 2)
+#
 closing_tags="</FONT></BODY></HTML>"
 genprivs="USAGE|FILE|PROCESS"
 lgrant=""
@@ -10,6 +20,7 @@ changes=0
 tmpf=/tmp/dbgranter.$$
 trap 'rm -f $tmpf 0'
 set -f
+vpn_mask="$(echo $REMOTE_ADDR | cut -d"." -f 1-3).%"
 #
 
 unescape_input()
@@ -20,20 +31,19 @@ unescape_input()
 post_checks()
 {
 	post_error=0
-#	echo "x" > $BASE/log/.fscheck
-#	x=$(cat $BASE/log/.fscheck)
-#	if [ "$x" != "x" ] 
-#	then
-#		display "FILE SYSTEM FULL, cannot operate" 1
-#		post_error=1
-#		return
-#	fi
 	if [ "$host" = "" ] 
 	then 
 		display "Please specify a server" 1
 		post_error=1
 		return
 	fi
+        err=$(mysqladmin -u "$service_user" -p"$service_password" -h"$host" ping 2>&1 | fgrep error | cut -d":" -f2-)
+        if [ "$err" != "" ]
+        then
+                display "$err" 1
+                post_error=1
+                return
+        fi
 	if [ "$user" = "" ]
 	then
 		display "Please specify your user" 1
@@ -53,53 +63,62 @@ post_checks()
 		return
 	fi
 	password=$(unescape_input "$password")
-	err=$(mysqladmin -u "$user" -p"$password" -h"$host" ping 2>&1 | fgrep error | cut -d":" -f2-)
-	if [ "$err" != "" ]
+	pass_ok=$(echo "select if(password('$password') =  password, 1, 0) from mysql.user where user = '$user'" | mysql -ANr -u "$service_user" -p"$service_password" -h"$host" 2>/dev/null)
+	if [ $pass_ok -eq 0 ]
 	then
-		display "$err" 1
+		display "username/password combination is incorrect" 1
 		post_error=1
 		return
 	fi
-	if [ "$lgrant" = "" ]
-	then
-		display "Please specify the grant" 1
-		post_error=1
-		return
-	fi
-	rgrant=$(unescape_input "$rgrant")
-	if [ "$rgrant" = "" ]
-	then
-		display "Please specify the grant" 1
-		post_error=1
-		return
-	fi
-	if [ "$(echo "show variables like 'read_only'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>&1 | cut -f 2)" != "OFF" ]
+	if [ "$(echo "show variables like 'read_only'" | mysql -ANr -u "$service_user" -p"$service_password" -h"$host" 2>&1 | cut -f 2)" != "OFF" ]
 	then
 		display "This instance is READ ONLY" 1
 		post_error=1
 		return
 	fi
-	if [ "$schema" = "" ]
+	can_grant=$(echo "select if(Grant_priv = 'Y', 1, 0) from mysql.user where user = '$user'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null)
+	[ "$can_grant" = "" ] && can_grant=0
+
+	if [ "$lgrant" = "" ]
 	then
-		display "Please specify schema name" 1
-		post_error=1
+		display "Please specify the grant" 0
+		post_error=2
 		return
 	fi
-	res=$(mysql -u "$user" -p"$password" -h"$host" "$schema" 2>&1)
-	if [ "$res" != "" ]
+	if [ $can_grant -eq 0 -a "$lgrant" != "$user" ]
 	then
-		display "$res" 1
-		post_error=1
+		display "You are allowed to see our own grants only" 1
+		post_error=2
+		return
+	fi
+	rgrant=$(unescape_input "$rgrant")
+	if [ "$rgrant" = "" ]
+	then
+		display "Please specify the grant" 0
+		post_error=2
+		return
+	fi
+	if [ "$schema" = "" ]
+	then
+		display "Please specify schema name" 0
+		post_error=2
+		return
+	fi
+	res=$(echo "show databases like '$schema'" | mysql -ANr -u "$service_user" -p"$service_password" -h"$host" 2>&1)
+	if [ "$res" != "$schema" ]
+	then
+		display "No such schema $schema" 1
+		post_error=2
 		return
         fi
-	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]" | egrep "$genprivs")
+	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$service_user" -p"$service_password" -h"$host" 2>/dev/null | tr -d "[\`]" | egrep "$genprivs")
 	if [ "$grants" = "" ]
 	then
 		display "No USAGE for '$lgrant'@'$rgrant'" 1
-		post_error=1
+		post_error=2
 		return
 	fi
-	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null | tr -d "[\`]" | fgrep "ON $schema.")
+	grants=$(echo "show grants for '$lgrant'@'$rgrant'" | mysql -ANr -u "$service_user" -p"$service_password" -h"$host" 2>/dev/null | tr -d "[\`]" | fgrep "ON $schema.")
 	if [ "$grants" = "" ]
 	then
 		display "WARNING: no grants found for '$lgrant'@'$rgrant'" 2
@@ -118,19 +137,32 @@ display() {
 
 show_form()
 {
-	printf "<FONT SIZE=2>DBGranter version: $VERSION<BR></FONT><BR>"
+	printf "<FONT SIZE=2>DBGranter version: $VERSION<BR></FONT><BR>" 
+	printf "<!-- %s -->\n" "$vpn_mask" 
 	printf "<FORM METHOD=\"POST\" ACTION=\"$SCRIPT_NAME\" accept-charset=\"UTF-8\">\n"
 	printf "<TABLE>\n"
 	printf "<TR><TD>Host:</TD><TD><INPUT TYPE=TEXT NAME=\"host\" VALUE=\"$host\" MAXLENGTH=36 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>User:</TD><TD><INPUT TYPE=TEXT NAME=\"user\" VALUE=\"$user\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>Password:</TD><TD><INPUT TYPE=PASSWORD NAME=\"password\" VALUE=\"$password\" MAXLENGTH=40 SIZE=16></TD></TR>\n"
-	gdisplay=$(echo $rgrant | sed -e "s/%/%%/g")
-	printf "<TR><TD>Grant:</TD><TD><INPUT TYPE=TEXT NAME=\"lgrant\" VALUE=\"$lgrant\" MAXLENGTH=64 SIZE=16>@<INPUT TYPE=TEXT NAME=\"rgrant\" VALUE=\"$gdisplay\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
+	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
+	printf "<TR><TD COLSPAN=2><INPUT TYPE=\"SUBMIT\" VALUE=\"GO\">\n"
+	printf "<TR><TD COLSPAN=2><DIV ID=\"grant\" STYLE=\"display:%s\">\n" "$1"
+	printf "<TABLE>\n"
+	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
+	if [ $can_grant -eq 1 ]
+	then
+		printf "<TR><TD>Grant:</TD><TD><INPUT TYPE=TEXT NAME=\"lgrant\" VALUE=\"%s\" MAXLENGTH=64 SIZE=16>@<INPUT TYPE=TEXT NAME=\"rgrant\" VALUE=\"%s\" MAXLENGTH=16 SIZE=16></TD></TR>\n" "$lgrant" "$rgrant"
+	else
+		printf "<TR><TD>Grant:</TD><TD><INPUT TYPE=TEXT NAME=\"lgrant\" VALUE=\"%s\" MAXLENGTH=64 SIZE=16 readonly=\"readonly\">@<INPUT TYPE=TEXT NAME=\"rgrant\" VALUE=\"%s\" MAXLENGTH=16 SIZE=16 readonly=\"readonly\"></TD></TR>\n" "$user" "$vpn_mask"
+	fi
 	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$schema\" MAXLENGTH=32 SIZE=16></TD></TR>\n"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
-	printf "<TR><TD COLSPAN=2><B><PRE>$message</PRE></B></TD></TR>\n"
+	printf "<TR><TD><INPUT TYPE=\"SUBMIT\" VALUE=\"SHOW GRANTS\">\n"
+	printf "</TD><TD ALIGN=RIGHT><FONT SIZE=2><A HREF=\"%s\"><B>START OVER</B></FONT></TD></TR>\n" "$SCRIPT_NAME"
+	printf "</TABLE>\n"
+	printf "</DIV></TD></TR>\n"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
-	printf "<TR><TD COLSPAN=2><INPUT TYPE=\"SUBMIT\" VALUE=\"Go\">\n"
+	printf "<TR><TD COLSPAN=2><B><PRE>$message</PRE></B></TD></TR>\n"
 	printf "</TABLE>\n"
 }
 
@@ -143,31 +175,33 @@ format()
 	if [[ $2 == *"SELECT"* ]] 
 	then
 		s=" CHECKED"
-		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oselect\">\n" "$1" 
+		[ $can_grant -eq 1 ] && printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oselect\">\n" "$1" 
 	fi
 	if [[ $2 == *"INSERT"* ]] 
 	then
 		i=" CHECKED"
-		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oinsert\">\n" "$1" 
+		[ $can_grant -eq 1 ] && printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oinsert\">\n" "$1" 
 	fi
 	if [[ $2 == *"UPDATE"* ]] 
 	then
 		u=" CHECKED"
-		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oupdate\">\n" "$1" 
+		[ $can_grant -eq 1 ] && printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"oupdate\">\n" "$1" 
 	fi
 	if [[ $2 == *"DELETE"* ]] 
 	then
 		d=" CHECKED"
-		printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"odelete\">\n" "$1" 
+		[ $can_grant -eq 1 ] && printf "<INPUT TYPE=HIDDEN NAME=\"%s\" VALUE=\"odelete\">\n" "$1" 
 	fi
-	printf "S <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"select\"%s>\n" "$1" "$s" 
-	printf "I <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"insert\"%s>\n" "$1" "$i"
-	printf "U <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"update\"%s>\n" "$1" "$u"
-	printf "D <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"delete\"%s>\n" "$1" "$d"
+	[ $can_grant -eq 0 ] && disabled=" disabled=\"disabled\"" || disabled=""
+	printf "S <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"select\"%s%s>\n" "$1" "$s" "$disabled"
+	printf "I <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"insert\"%s%s>\n" "$1" "$i""$disabled"
+	printf "U <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"update\"%s%s>\n" "$1" "$u""$disabled"
+	printf "D <INPUT TYPE=CHECKBOX NAME=\"%s\" VALUE=\"delete\"%s%s>\n" "$1" "$d""$disabled"
 }
 
 generate_grants()
 {
+	[ $can_grant -eq 0 ] && return
 	t=$1
 	s=$2
 	os=$3
@@ -228,7 +262,7 @@ parse_grants()
 			echo "$tschema $table $what"
 		done 
 		echo "$schema * .none"
-		echo "select concat('$schema', ' ', table_name, ' .none') from information_schema.tables where table_schema  = '$schema'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null 
+		echo "select concat('$schema', ' ', table_name, ' .none') from information_schema.tables where table_schema  = '$schema'" | mysql -ANr -u "$service_user" -p"$service_password" -h"$host" 2>/dev/null 
 	) | sort > $tmpf
 	printf "<TABLE>\n" 
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
@@ -250,7 +284,7 @@ parse_grants()
 	done
 	printf "<TR><TD><FONT FACE=\"Arial\" SIZE=2>%s</FONT><TD><TD><FONT FACE=\"Arial\" SIZE=2>%s</FONT></TD></TR>\n" "$prev01" "$(format $prev01 $prev2)"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
-	printf "<TR><TD COLSPAN=2 ALIGN=CENTER><INPUT TYPE=\"SUBMIT\" VALUE=\"UPDATE\">\n"
+	[ $can_grant -eq 1 ] && printf "<TR><TD COLSPAN=2 ALIGN=CENTER><INPUT TYPE=\"SUBMIT\" VALUE=\"UPDATE\">\n"
 	printf "</TABLE>\n"
 }
 
@@ -321,22 +355,20 @@ fi
 if [ $post -eq 1 ]
 then
 	post_checks
-	if [ $post_error -eq 0 ]
-	then
-		show_form
-		myerr=$(mysqladmin -u "$user" -p"$password" -h "$host" ping 2>&1)
-		connected=$(echo "$myerr" | fgrep -c alive)
-		if [ $connected -ne 1 ]
-		then
-			display "$(echo "$myerr" | tail -1)" 1
-		else
+	case $post_error in
+		0)	show_form block
 			[ $changes -eq 0 ] && parse_grants "$grants"
-		fi
-	else
-		show_form
-	fi
+			;;
+		1)	show_form none;;
+		2)	show_form block;;
+	esac
 else
-	show_form
+	if [ "$service_user" = "" -o "$service_password" = "" ]
+	then
+		echo "Please ensure config file exists and contains required information"
+		exit 0
+	fi
+	show_form none
 fi
 printf "</FORM>\n"
 printf "$closing_tags\n"
