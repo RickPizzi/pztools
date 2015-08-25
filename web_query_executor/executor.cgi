@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.10.2"
+VERSION="0.10.5"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -767,7 +767,7 @@ query_update()
 					IFS=" "
 					rbw=$(rollback_pkwhere "$pk")
 					IFS="$saveIFS"
-					echo -e "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE $where" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db" >> $rollback_file
+					echo -e "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE ${wa[0]}='$naked_arg'" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db" >> $rollback_file
 				else
 					IFS="
 "
@@ -791,6 +791,8 @@ query_update()
 		#
 		#	WHERE key = ....
 		#
+		echo "-- Rollback instructions for query $qc" >> $rollback_file
+		[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 		if [ $pkwa -eq 1 ]
 		then
 			rbs=$(rollback_args "$cols")
@@ -802,7 +804,6 @@ query_update()
 				saveIFS="$IFS"
 				IFS="
 "
-				[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 				for row in $(echo "SELECT $pk FROM $table WHERE $where" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db")
 				do
 					res=$(echo -e "SET NAMES utf8; SELECT $rbs FROM $table WHERE $pk = '$row';" | mysql -ANr -h $host -u "$user" -p"$password" "$db" | sed -e "s/'NULL'/NULL/g")
@@ -824,7 +825,6 @@ query_update()
 				if [ "$res" != "" ]
 				then
 					rollback=1
-					[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 					echo "UPDATE $table SET $res WHERE $where;" >> $rollback_file
 				fi
 			fi
