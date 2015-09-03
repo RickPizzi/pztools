@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.10.5"
+VERSION="0.10.7"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -81,7 +81,7 @@ show_form()
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
 	[ $dryrun -eq 1 ] && checkbox="CHECKED"
 	[ $((qc - 1)) -gt $MAX_QUERIES ] && printf "<INPUT TYPE=\"HIDDEN\" NAME=\"overflow\" VALUE=1>\n"
-	printf "<TR><TD>Dry Run:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"dryrun\" VALUE=\"on\" %s></TD></TR>\n" "$checkbox"
+	printf "<TR><TD>Dry Run:</TD><TD ALIGN=LEFT><INPUT TYPE=CHECKBOX NAME=\"dryrun\" VALUE=\"on\" %s></TD></TR>\n" "$checkbox"
 	printf "<TR><TD COLSPAN=2><INPUT TYPE=\"SUBMIT\" VALUE=\"Execute\">\n"
 	printf "</TABLE>\n"
 	printf "</FORM>\n"
@@ -472,7 +472,7 @@ rollback_pkwhere()
 	for arg in $1
 	do
 		[ $c -gt 0 ] && echo -n ",' AND ',"
-		echo -n "'$arg=\'',$arg,'\''"
+		echo -n "'$arg=\'',\`$arg\`,'\''"
 		c=$(($c + 1))
 	done
 	echo ")"
@@ -627,6 +627,7 @@ query_insert()
 		then
 			if [ $(is_autoinc) -eq 1 ]
 			then
+				echo "-- Rollback instructions for query $qc" >> $rollback_file
 				echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." >> $rollback_file
 			else
 				replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
