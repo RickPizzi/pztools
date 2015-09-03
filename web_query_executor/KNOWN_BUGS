@@ -1,0 +1,1 @@
+- if you try to change a primary key with an update statement, rollback code will be incorrect
