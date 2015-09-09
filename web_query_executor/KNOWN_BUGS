@@ -1,1 +1,2 @@
 - if you try to change a primary key with an update statement, rollback code will be incorrect
+- when inserting a row in a table which has an AUTO INCREMENT PK and the value for PK is explicited in the query, the rollback will not be generated
