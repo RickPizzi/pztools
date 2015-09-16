@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.10.7"
+VERSION="0.10.8"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -616,7 +616,7 @@ query_insert()
 					echo "DELETE FROM $table WHERE $pk = '$last_id';" >> $rollback_file
 					display "AUTO-INC value assigned:  $last_id, rollback available" 3
 				else
-					echo "-- rollback not supported for: ${1:0:60}..." >> $rollback_file
+					replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
 				fi
 			else
 				replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
