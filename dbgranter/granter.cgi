@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-VERSION="0.4.2"
+VERSION="0.4.3"
 #
 # NOTICE: CONFIG FILE
 # Config file /etc/dbgranter.conf should contain the following:
@@ -70,15 +70,18 @@ post_checks()
 		post_error=1
 		return
 	fi
-	if [ "$(echo "show variables like 'read_only'" | mysql -ANr -u "$service_user" -p"$service_password" -h"$host" 2>&1 | cut -f 2)" != "OFF" ]
-	then
-		display "This instance is READ ONLY" 1
-		post_error=1
-		return
-	fi
 	can_grant=$(echo "select if(Grant_priv = 'Y', 1, 0) from mysql.user where user = '$user'" | mysql -ANr -u "$user" -p"$password" -h"$host" 2>/dev/null)
 	[ "$can_grant" = "" ] && can_grant=0
 
+	if [ "$(echo "show variables like 'read_only'" | mysql -ANr -u "$service_user" -p"$service_password" -h"$host" 2>&1 | cut -f 2)" != "OFF" ]
+	then
+		if [ $can_grant -eq 1 ]
+		then
+			display "This instance is READ ONLY" 1
+			post_error=1
+			return
+		fi
+	fi
 	if [ "$lgrant" = "" ]
 	then
 		display "Please specify the grant" 0
