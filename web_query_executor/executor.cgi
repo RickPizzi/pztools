@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.10.8"
+VERSION="0.11.2"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -15,8 +15,11 @@ kill_backq=0
 default_db=""
 closing_tags="</FONT></BODY></HTML>"
 message=""
+st_errors=0
 tmpf=/tmp/executor.$$
-trap 'rm -f $tmpf' 0
+res_stdout=/tmp/executor_stdout.$$
+res_stderr=/tmp/executor_stderr.$$
+trap 'rm -f $tmpf $res_stdout $res_stderr' 0
 
 unescape_input()
 {
@@ -155,18 +158,33 @@ post_checks()
 
 run_statement()
 {
-	statement_error=0
 	q_warning=""
+	q_result=""
 	q_last_id=""
 	last_id=""
 	case $2 in
 		0)
-			my_err=$(echo "set names utf8; $1; show warnings; select last_insert_id();" | mysql -u "$user" -p"$password" -h "$host" -vv "$db" 2>&1 | fgrep -v Bye)
+			(
+				echo "SET NAMES utf8;"
+				echo "$1;"
+				echo "SHOW WARNINGS;"
+				echo "SELECT LAST_INSERT_ID();"
+			) | mysql -u "$user" -p"$password" -h "$host" -vv "$db" > $res_stdout 2> $res_stderr
 			;;
 		1)
-			my_err=$(echo "set names utf8; begin; $1; show warnings; select last_insert_id(); rollback" | mysql -u "$user" -p"$password" -h "$host" -vv "$db" 2>&1 | fgrep -v Bye)
+			(
+				echo "SET NAMES utf8;"
+				echo "BEGIN;"
+				echo "$1;"
+				echo "SHOW WARNINGS;"
+				echo "SELECT LAST_INSERT_ID();"
+				echo "ROLLBACK;"
+			) | mysql -u "$user" -p"$password" -h "$host" -vv "$db" > $res_stdout 2> $res_stderr
+			#display "DEBUG STDOUT: $(cat $res_stdout)" 0
+			#display "DEBUG STDERR: $(cat $res_stderr)" 0
 			;;
 	esac
+	my_err=$(cat $res_stdout | fgrep -v Bye)
 	c=0
 	saveIFS="$IFS"
 	IFS="
@@ -174,6 +192,7 @@ run_statement()
 	warnings=$(echo "$my_err" | fgrep -v "Warnings: 0" | fgrep -c "Warning")
 	for row in $(echo "$my_err")
 	do
+		#display "DEBUG-$c $row" 0
 		if [ "$row" = "--------------" ]
 		then
 			c=$(($c + 1))
@@ -182,7 +201,7 @@ run_statement()
 		case $2 in
 			0)	case $c in
 					0) q_error="$row";;
-					4) q_result="$row";;
+					4) q_result="$q_result<br>$row";;
 					6) if [ $warnings -gt 0 ]
 					   then
 						if [ $(echo $row | fgrep -c " in set") -eq 0 ]
@@ -195,7 +214,7 @@ run_statement()
 				;;
 			1)	case $c in
 					0) q_error="$row";;
-					6) q_result="$row";;
+					6) q_result="$q_result<br>$row";;
 					8) if [ $warnings -gt 0 ]
 					   then
 						if [ $(echo $row | fgrep -c " in set") -eq 0 ]
@@ -210,14 +229,17 @@ run_statement()
 		#display "$c $row" 0
 	done
 	IFS="$saveIFS"
-	if [ $(echo "$my_err" | fgrep -c "ERROR ") -eq 1 ]
+	if [ -s $res_stderr ]
 	then
 		case $2 in
-			0) 	display "$q_error $q_result" 1
+			0)
+				display "$(cat $res_stderr)" 1
 				statement_error=1
 				;;
-			1) 	display "DRY RUN RESULT: $q_error" 3
+			1) 	
+				display "DRY RUN RESULT: $(cat $res_stderr)" 3
 				;;
+				
 		esac
 	else
 		case $2 in
@@ -323,6 +345,8 @@ replace_rollback()
 		fi
 	fi
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1 || rr_using_primary=0
+	# if both primary key and unique index are available, prefer unique index for rollback
+	[ $rr_nukeys -gt 0 -a $rr_nukeys -eq $rr_nukeys_used ] && rr_using_primary=0
 	IFS="
 "
 	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES(/(/ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" | tr "[,]" "[\t]")
@@ -330,6 +354,7 @@ replace_rollback()
 		IFS="	"
 		rr_col_values=($rr_row)
 		rr_idx=0
+		rr_kc=0
 		rr_where=""
 		while true
 		do
@@ -341,8 +366,9 @@ replace_rollback()
 						nobq="${rr_col_names[$rr_idx]//\`}"
 						if [ "${nobq,,}" = "${arg,,}" ]
 						then
-							[ $rr_idx -gt 0 ] && rr_where="$rr_where AND"
+							[ $rr_kc -gt 0 ] && rr_where="$rr_where AND"
 							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
+							rr_kc=$((rr_kc + 1))
 						fi
 					done
 					;;
@@ -352,8 +378,9 @@ replace_rollback()
 						nobq="${rr_col_names[$rr_idx]//\`}"
 						if [ "${nobq,,}" = "${arg,,}" ]
 						then
-							[ $rr_idx -gt 0 ] && rr_where="$rr_where AND"
+							[ $rr_kc -gt 0 ] && rr_where="$rr_where AND"
 							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
+							rr_kc=$((rr_kc + 1))
 						fi
 					done
 					;;
@@ -362,7 +389,7 @@ replace_rollback()
 		done
 		echo "SET NAMES utf8;"
 		echo "DELETE FROM $table WHERE $rr_where;"
-		mysqldump --skip-opt --skip-trigger --compact --no-create-info --single-transaction --user "$user" --password="$password" --where "$rr_where" --host "$host" "$db" "$table" 
+		[ $replace -eq 1 ] && mysqldump --skip-opt --skip-trigger --compact --no-create-info --single-transaction --user "$user" --password="$password" --where "$rr_where" --host "$host" "$db" "$table" 
 		IFS="
 "
 	done
@@ -588,6 +615,7 @@ query_delete()
 query_insert()
 {
 	display "Query type: ${3^^}" 0
+	[ "${3,,}" = "replace" ] && replace=1 || replace=0
 	IFS=" " q=($(echo $1 | sed -e "s/(/ (/ig"))
 	query_id=$2
 	if [ "${q[1],,}" != "into" ]
@@ -607,7 +635,7 @@ query_insert()
 	then
 		if [ $statement_error -eq 0 ]
 		then
-			if [ "${3,,}" != "replace" ]
+			if [ $replace -eq 0 ]
 			then
 				if [  $last_id -gt 0 ]
 				then
@@ -623,7 +651,7 @@ query_insert()
 			fi
 		fi
 	else
-		if [ "${3,,}" != "replace" ]
+		if [ $replace -eq 0 ]
 		then
 			if [ $(is_autoinc) -eq 1 ]
 			then
@@ -870,6 +898,7 @@ process_query() {
 	q_nb=$(echo "$1" | sed -e "s/^ *//")
 	IFS=" " q=($q_nb)
 	display "----- Processing query #$2 ------" 2
+	statement_error=0
 	dq="${q[@]}"
 	dqq=$(pretty_print "$dq")
 	display "$dqq" 2
@@ -889,6 +918,7 @@ process_query() {
 		*) display "Syntax error near \"${q[0]}\"" 1
 			;;
 	esac
+	[ $statement_error -eq 1 ] && st_errors=$((st_errors + 1))
 	display "" 0
 }
 
@@ -949,7 +979,7 @@ then
 				display "$(mysqladmin -u "$user" -p"$password" -h "$host" version | tail -7)" 0
 			else
 				IFS=";"
-				qc=1
+				qc=0
 				if [ "$ticket" != "" ]
 				then
 					rollback_file="$BASE/rollback/${user}_${host}_${ticket}_$$.sql"
@@ -983,8 +1013,8 @@ then
 							continue
 						fi
 					fi
-					process_query "$q" $qc
 					qc=$(($qc + 1))
+					process_query "$q" $qc
 				done
 				echo "COMMIT;" >> $rollback_file
 			fi
@@ -999,7 +1029,16 @@ then
 				fi
 				rm -f $rollback_file ${rollback_file}_*_dump.gz 
 			else
-				display "Done. Rollback statements saved in $rollback_file on $(hostname)". 0
+				if [ $qc -gt 0 ]
+				then
+					if [ $st_errors -eq 0 ]
+					then
+						display "Done. Rollback statements saved in $rollback_file on $(hostname)." 0
+					else
+						display "$st_errors out of $qc queries failed!" 1
+						display "Rollback statements for successful queries saved in $rollback_file on $(hostname)." 0
+					fi
+				fi
 			fi
 		fi
 	fi
