@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.11.4"
+VERSION="0.11.5"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -344,9 +344,12 @@ replace_rollback()
 			fi
 		fi
 	fi
-	[ $rr_nkeys -eq $rr_nkeys_used -o $last_id -gt 0 ] && rr_using_primary=1 || rr_using_primary=0
+	rr_using_primary=0
+	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1
+	[ $last_id -eq 0  ] && rr_using_primary=1
 	# if both primary key and unique index are available, prefer unique index for rollback
 	[ $rr_nukeys -gt 0 -a $rr_nukeys -eq $rr_nukeys_used ] && rr_using_primary=0
+	#echo "-- DEBUG: keys=$rr_nkeys used=$rr_nkeys_used ukeys=$rr_nukeys used=$rr_nukeys_used using_primary=$rr_using_primary"
 	# special case: autoinc pk and no unique index
 	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $last_id -gt 0 ]
 	then
