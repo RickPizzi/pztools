@@ -346,7 +346,7 @@ replace_rollback()
 	fi
 	rr_using_primary=0
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1
-	[ $last_id -eq 0  ] && rr_using_primary=1
+	[ $last_id -gt 0  ] && rr_using_primary=1
 	# if both primary key and unique index are available, prefer unique index for rollback
 	[ $rr_nukeys -gt 0 -a $rr_nukeys -eq $rr_nukeys_used ] && rr_using_primary=0
 	#echo "-- DEBUG: keys=$rr_nkeys used=$rr_nkeys_used ukeys=$rr_nukeys used=$rr_nukeys_used using_primary=$rr_using_primary"
