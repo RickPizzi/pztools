@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.11.3"
+VERSION="0.11.4"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -241,9 +241,9 @@ run_statement()
 				
 		esac
 	else
+		last_id=$q_last_id
 		case $2 in
-			0)	last_id=$q_last_id
-				display "$q_result" 2
+			0)	display "$q_result" 2
 				display "$q_warning" 3
 				log "$1"
 				;;
@@ -329,7 +329,8 @@ replace_rollback()
 			[ "${nobq,,}" = "${arg2,,}" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
 		done
 	done
-	if [ $rr_nkeys != $rr_nkeys_used ]
+
+	if [ $rr_nkeys != $rr_nkeys_used -a $last_id -eq 0 ]
 	then
 		if [ "$rr_unique" = "" ]
 		then
@@ -343,7 +344,7 @@ replace_rollback()
 			fi
 		fi
 	fi
-	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1 || rr_using_primary=0
+	[ $rr_nkeys -eq $rr_nkeys_used -o $last_id -gt 0 ] && rr_using_primary=1 || rr_using_primary=0
 	# if both primary key and unique index are available, prefer unique index for rollback
 	[ $rr_nukeys -gt 0 -a $rr_nukeys -eq $rr_nukeys_used ] && rr_using_primary=0
 	# special case: autoinc pk and no unique index
@@ -357,7 +358,7 @@ replace_rollback()
 				return
 				;;
 			1)
-				if [ $(is_autoinc) -eq 1 ]
+				if [ $dryrun -eq 1 -a $last_id -gt 0 ]
 				then
 					echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." 
 					return
