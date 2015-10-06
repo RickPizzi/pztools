@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.11.2"
+VERSION="0.11.3"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -209,7 +209,7 @@ run_statement()
 							q_warning="$q_warning$row<br>"
 						fi
 					   fi;;
-					8) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
+					8) q_last_id="$q_last_id$(echo $row | egrep -v "LAST|row")";;
 				esac
 				;;
 			1)	case $c in
@@ -222,11 +222,10 @@ run_statement()
 							q_warning="$q_warning$row<br>"
 						fi
 					   fi;;
-					10) q_last_id="$q_last_id$(echo $row | egrep -v "last|row")";;
+					10) q_last_id="$q_last_id$(echo $row | egrep -v "LAST|row")";;
 				esac
 				;;
 		esac
-		#display "$c $row" 0
 	done
 	IFS="$saveIFS"
 	if [ -s $res_stderr ]
@@ -347,6 +346,25 @@ replace_rollback()
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1 || rr_using_primary=0
 	# if both primary key and unique index are available, prefer unique index for rollback
 	[ $rr_nukeys -gt 0 -a $rr_nukeys -eq $rr_nukeys_used ] && rr_using_primary=0
+	# special case: autoinc pk and no unique index
+	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $last_id -gt 0 ]
+	then
+		case $dryrun in
+			0)
+				[ "$db" != "" ] && echo "USE $db" 
+				echo "DELETE FROM $table WHERE $(get_pk) = '$last_id';"
+				display "AUTO-INC value assigned:  $last_id, rollback available" 3
+				return
+				;;
+			1)
+				if [ $(is_autoinc) -eq 1 ]
+				then
+					echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." 
+					return
+				fi
+				;;
+		esac
+	fi
 	IFS="
 "
 	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES(/(/ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" | tr "[,]" "[\t]")
@@ -631,39 +649,8 @@ query_insert()
 	display "Schema: $db" 0
 	display "Table: $table" 0
 	run_statement "$1" $dryrun
-	if [ $dryrun -eq 0 ]
-	then
-		if [ $statement_error -eq 0 ]
-		then
-			if [ $replace -eq 0 ]
-			then
-				if [  $last_id -gt 0 ]
-				then
-					pk=$(get_pk)
-					[ "$db" != "" ] && echo "USE $db" >> $rollback_file
-					echo "DELETE FROM $table WHERE $pk = '$last_id';" >> $rollback_file
-					display "AUTO-INC value assigned:  $last_id, rollback available" 3
-				else
-					replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
-				fi
-			else
-				replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
-			fi
-		fi
-	else
-		if [ $replace -eq 0 ]
-		then
-			if [ $(is_autoinc) -eq 1 ]
-			then
-				echo "-- Rollback instructions for query $qc" >> $rollback_file
-				echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." >> $rollback_file
-			else
-				replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
-			fi
-		else
-			replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
-		fi
-	fi
+	[ $dryrun -eq 0 -a $statement_error -eq 1 ] && return
+	replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
 }
 
 query_update()
