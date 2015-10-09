@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.11.5"
+VERSION="0.11.6"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -357,7 +357,6 @@ replace_rollback()
 			0)
 				[ "$db" != "" ] && echo "USE $db" 
 				echo "DELETE FROM $table WHERE $(get_pk) = '$last_id';"
-				display "AUTO-INC value assigned:  $last_id, rollback available" 3
 				return
 				;;
 			1)
@@ -653,7 +652,11 @@ query_insert()
 	display "Schema: $db" 0
 	display "Table: $table" 0
 	run_statement "$1" $dryrun
-	[ $dryrun -eq 0 -a $statement_error -eq 1 ] && return
+	if [ $dryrun -eq 0 ]
+	then
+		[ $statement_error -eq 1 ] && return
+		[ $replace -eq 0 -a $last_id -gt 0 ] && display "AUTO-INC value assigned:  $last_id" 3
+	fi
 	replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
 }
 
