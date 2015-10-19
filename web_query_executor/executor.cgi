@@ -840,7 +840,7 @@ query_update()
 			then
 				# assumes small table, add a check
 				rollback=1
-				mysqldump --no-create-info -skip-opt --skip-trigger --single-transaction --where "$where" --replace --user "$user" --password="$password" --host "$host" "$db" "$table" | gzip  > ${rollback_file}_${query_id}_dump.gz
+				mysqldump --no-create-info --skip-opt --skip-trigger --single-transaction --where "$where" --replace --user "$user" --password="$password" --host "$host" "$db" "$table" | gzip  > ${rollback_file}_${query_id}_dump.gz
 				echo "-- Reimport table $table using ${rollback_file}_${query_id}_dump.gz" >> $rollback_file
 			else
 				rbs=$(rollback_args "$cols")
