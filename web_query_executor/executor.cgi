@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.11.6"
+VERSION="0.11.8"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -729,7 +729,7 @@ query_update()
 		return
 	fi
 	notsrch=$(array_idx "$where" "not")
-	if [ $nsrch -ge 0 ]
+	if [ $notsrch -ge 0 ]
 	then
 		nullsrch=$(array_idx "$where" "null")
 		nullsrch=$((nullsrch - 1))
@@ -840,7 +840,7 @@ query_update()
 			then
 				# assumes small table, add a check
 				rollback=1
-				mysqldump --no-create-info --skip-trigger --single-transaction --user "$user" --password="$password" --host "$host" "$db" "$table" | gzip  > ${rollback_file}_${query_id}_dump.gz
+				mysqldump --no-create-info -skip-opt --skip-trigger --single-transaction --where "$where" --replace --user "$user" --password="$password" --host "$host" "$db" "$table" | gzip  > ${rollback_file}_${query_id}_dump.gz
 				echo "-- Reimport table $table using ${rollback_file}_${query_id}_dump.gz" >> $rollback_file
 			else
 				rbs=$(rollback_args "$cols")
