@@ -3,9 +3,8 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.0.0"
+VERSION="1.0.6"
 BASE=/usr/local/executor
-MAX_QUERIES=500
 #
 set -f
 post=0
@@ -14,14 +13,15 @@ db=""
 kill_backq=0
 default_db=""
 closing_tags="</FONT></BODY></HTML>"
-message=""
 total_warnings=0
 total_errors=0
 tmpf=/tmp/executor.$$
 warnings_tmpf=/tmp/executor.warn.$$
 errors_tmpf=/tmp/executor.err.$$
+output_tmpf=/tmp/executor.out.$$
+deleted_tables_tmpf=/tmp/executor.del.$$
 temp_table_name=_executor_$$
-trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf' 0
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf' 0
 
 unescape_input()
 {
@@ -50,16 +50,16 @@ escape_html()
 
 display() {
 	case "$2" in
-		0) message="$message$1<BR>";;
-		1) message="$message<FONT COLOR=\"Red\">ERROR: $1</FONT><BR>";;
-		2) message="$message<FONT COLOR=\"Green\">$1</FONT><BR>";;
-		3) message="$message<FONT COLOR=\"Orange\">$1</FONT><BR>";;
+		0) echo "$1<BR>" >> $output_tmpf;;
+		1) echo "<FONT COLOR=\"Red\">ERROR: $1</FONT><BR>" >> $output_tmpf;;
+		2) echo "<FONT COLOR=\"Green\">$1</FONT><BR>" >> $output_tmpf;;
+		3) echo "<FONT COLOR=\"Orange\">$1</FONT><BR>" >> $output_tmpf;;
 	esac
 }
 
 debug() {
 	d_text=$(echo "$1" | od -va)
-	message="$message<BR>DEBUG:<BR>$d_text<BR>";
+	echo ="<BR>DEBUG:<BR>$d_text<BR>"  >> $output_tmpf;
 	echo "$1" >> /usr/local/executor/log/debug.log
 }
 
@@ -81,16 +81,15 @@ mysql_query()
 	rm -f $errors_tmpf
 	thisquery="${1/# /}"
 	[ "${1,,}" == "show warnings" ] && sw=1
-	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$default_db"] 
-	then
-		querybuf="$thisquery"
-		mysql_query "USE $2"
-		thisquery="$querybuf"
-	fi
 	skip=0
 	error=0
 	warning_text=""
 	qtype=$(echo ${thisquery,,} | cut -d" " -f 1)
+	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$default_db" ] 
+	then
+		echo "use $2;"  >&${mysqlc[1]}
+		mysql_debug "mysql>use $2;"
+	fi
 	echo "$thisquery;" >&${mysqlc[1]}
 	mysql_debug "mysql>$thisquery;"
 	while read -u ${mysqlc[0]} row
@@ -158,7 +157,7 @@ mysql_query()
 			*)
 				qtypebuf="$qtype"
 				warning_text=$(mysql_query "SHOW WARNINGS")
-				echo $warning_text > $warnings_tmpf
+				echo $warning_text | grep -v ^Records > $warnings_tmpf
 				qtype="$qtypebuf"
 				;;
 		esac
@@ -167,15 +166,23 @@ mysql_query()
 
 consistent_dump()
 {
-	echo "SET SESSION default_storage_engine='MYISAM'; CREATE TABLE $1.$temp_table_name SELECT * FROM $1.$2 LIMIT 0" | mysql -A -u "$user" -p"$password" -h"$host" > /dev/null 2>&1
+	echo "SET SESSION default_storage_engine='MYISAM'; CREATE TABLE $1.${temp_table_name}_${qc} SELECT * FROM $1.$2 LIMIT 0" | mysql -A -u "$user" -p"$password" -h"$host" > /dev/null 2>&1
 	mysql_query "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED" > /dev/null
-	mysql_query "INSERT INTO $1.$temp_table_name SELECT * FROM $1.$2 WHERE $3" > /dev/null
+	mysql_query "INSERT INTO $1.${temp_table_name}_${qc} SELECT * FROM $1.$2 WHERE $3" "$db"> /dev/null
 	mysql_query "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ" > /dev/null
 	case $4 in
-		0) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$user" --password="$password" --where "$3" --host "$host" "$1" "$temp_table_name" | sed -e "s/$temp_table_name/$2/g";; 
-		1) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$user" --password="$password" --host "$host" --replare "$1" "$temp_table_name" | sed -e "s/$temp_table_name/$2/g";;
+		0) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$user" --password="$password" --where "$3" --host "$host" "$1" "${temp_table_name}_${qc}" | sed -e "s/${temp_table_name}_${qc}/$2/g";; 
+		1) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$user" --password="$password" --host "$host" --replace "$1" "${temp_table_name}_${qc}" | sed -e "s/${temp_table_name}_${qc}/$2/g";;
 	esac
-	echo "DROP TABLE $1.$temp_table_name" | mysql -A -u "$user" -p"$password" -h"$host" > /dev/null 2>&1 &
+	echo "$1.${temp_table_name}_${qc}" >> $deleted_tables_tmpf
+}
+
+cleanup()
+{
+	for t in $(cat $deleted_tables_tmpf)
+	do
+		echo "DROP TABLE $t;" 
+	done | mysql -A -u "$user" -p"$password" -h"$host" > /dev/null 2>&1
 }
 
 show_form()
@@ -197,10 +204,9 @@ show_form()
 	[ $dryrun -eq 1 ] && textarea=$(escape_html "$(unescape_textarea $query)")
 	printf "<TR><TD COLSPAN=2><TEXTAREA NAME=\"query\" ROWS=8 COLS=200>%s</TEXTAREA></TD></TR>\n" "$textarea"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
-	printf "<TR><TD COLSPAN=2><B><PRE>%s</PRE></B></TD></TR>\n" "$message"
+	printf "<TR><TD COLSPAN=2><B><PRE>%s</PRE></B></TD></TR>\n" "$(cat $output_tmpf)"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
 	[ $dryrun -eq 1 ] && checkbox="CHECKED"
-	[ $((qc - 1)) -gt $MAX_QUERIES ] && printf "<INPUT TYPE=\"HIDDEN\" NAME=\"overflow\" VALUE=1>\n"
 	printf "<TR><TD>Dry Run:</TD><TD ALIGN=LEFT><INPUT TYPE=CHECKBOX NAME=\"dryrun\" VALUE=\"on\" %s></TD></TR>\n" "$checkbox"
 	printf "<TR><TD COLSPAN=2><INPUT TYPE=\"SUBMIT\" VALUE=\"Execute\">\n"
 	printf "</TABLE>\n"
@@ -276,7 +282,7 @@ post_checks()
 run_statement()
 {
 	error=0
-	result=$(mysql_query "$1")
+	result=$(mysql_query "$1" "$db")
 	warning_text=$(cat $warnings_tmpf)
 	error_text=$(cat $errors_tmpf)
 	[ "$warning_text" != "" ] && total_warnings=$((total_warnings+1))
@@ -287,7 +293,7 @@ run_statement()
 	fi
 	case $(echo ${1,,} | cut -d" " -f 1) in
 		'insert'|'replace') 
-			q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()")
+			[ $2 -eq 0 ] && q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()") || q_last_id=-1
 			;;
 		*)
 			q_last_id=0
@@ -364,40 +370,43 @@ replace_rollback()
 			rr_q=$(echo "$1" | sed -e "s/VALUES/($rr_col_names_c) values/gi")
 			;;
 	esac
-	rr_unique=$(mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE'")
-	if [ "$rr_unique" != "" ]
+	if [ "$rr_cached_table" != "$db.$table" ]
 	then
-		rs=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_NAME = '$rr_unique' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
-		rr_ukeys=($(echo "$rs" | tr "[\n]" "[ ]"))
-	else
-		unset rr_ukeys
-	fi
-	rs=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
-	rr_keys=($(echo "$rs" | tr "[\n]" "[ ]"))
-	if [ "$rr_keys" = "" -a "$rr_unique" = "" ]
-	then
-		echo "-- The table lacks an unique index. Rollback is not possible."
-		return
+		rr_unique=$(mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE'")
+		if [ "$rr_unique" != "" ]
+		then
+			rs=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_NAME = '$rr_unique' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
+			rr_ukeys=($(echo "$rs" | tr "[\n]" "[ ]"))
+		else
+			unset rr_ukeys
+		fi
+		rs=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
+		rr_keys=($(echo "$rs" | tr "[\n]" "[ ]"))
+		if [ "$rr_keys" = "" -a "$rr_unique" = "" ]
+		then
+			echo "-- The table lacks an unique index. Rollback is not possible."
+			return
+		fi
+		IFS="	"
+		rr_nkeys=${#rr_keys[@]}
+		rr_nukeys=${#rr_ukeys[@]}
+		rr_nkeys_used=0
+		rr_nukeys_used=0
+		for arg in ${rr_col_names[@]}
+		do
+			nobq="${arg//\`}"
+			for arg2 in ${rr_keys[@]} 
+			do
+				[ "${nobq,,}" = "${arg2,,}" ] && rr_nkeys_used=$((rr_nkeys_used + 1))
+			done
+			for arg2 in ${rr_ukeys[@]} 
+			do
+				[ "${nobq,,}" = "${arg2,,}" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
+			done
+		done
+		rr_cached_table="$db.$table"
 	fi
 	echo "-- Rollback instructions for query $qc"
-	IFS="	"
-	rr_nkeys=${#rr_keys[@]}
-	rr_nukeys=${#rr_ukeys[@]}
-	rr_nkeys_used=0
-	rr_nukeys_used=0
-	for arg in ${rr_col_names[@]}
-	do
-		nobq="${arg//\`}"
-		for arg2 in ${rr_keys[@]} 
-		do
-			[ "${nobq,,}" = "${arg2,,}" ] && rr_nkeys_used=$((rr_nkeys_used + 1))
-		done
-		for arg2 in ${rr_ukeys[@]} 
-		do
-			[ "${nobq,,}" = "${arg2,,}" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
-		done
-	done
-
 	if [ $rr_nkeys != $rr_nkeys_used -a $last_id -eq 0 ]
 	then
 		if [ "$rr_unique" = "" ]
@@ -414,12 +423,12 @@ replace_rollback()
 	fi
 	rr_using_primary=0
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1
-	[ $last_id -gt 0  ] && rr_using_primary=1
+	[ $last_id -ne 0  ] && rr_using_primary=1
 	# if both primary key and unique index are available, prefer unique index for rollback
 	[ $rr_nukeys -gt 0 -a $rr_nukeys -eq $rr_nukeys_used ] && rr_using_primary=0
 	#echo "-- DEBUG: keys=$rr_nkeys used=$rr_nkeys_used ukeys=$rr_nukeys used=$rr_nukeys_used using_primary=$rr_using_primary"
 	# special case: autoinc pk and no unique index
-	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $last_id -gt 0 ]
+	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $last_id -ne 0 ]
 	then
 		case $dryrun in
 			0)
@@ -428,7 +437,7 @@ replace_rollback()
 				return
 				;;
 			1)
-				if [ $dryrun -eq 1 -a $last_id -gt 0 ]
+				if [ $dryrun -eq 1 -a $last_id -ne 0 ]
 				then
 					echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." 
 					return
@@ -530,6 +539,7 @@ check_pk_use()
 check_table_presence()
 {
 	table_present=1
+	[ "$ctp_cache" = "$db.$table" ] && return
 	if [ $(echo $table | fgrep -c "." ) -eq 0 ]
 	then
 		if [ "$default_db" = "" ]
@@ -551,6 +561,8 @@ check_table_presence()
 		display "No table named \"$table\" in schema \"$db\"" 1
 		table_present=0
 		return
+	else
+		ctp_cache="$db.$table"
 	fi
 }
 
@@ -1025,7 +1037,6 @@ then
 			'schema') default_db="$value";;
 			'query') query="$value";;
 			'ticket') ticket="$value";;
-			'overflow') dryrun="$value";;
 			'dryrun') 
 				[ "$value" = "on" ] && dryrun=1
 				;;
@@ -1094,21 +1105,17 @@ then
 			fi
 			if [ $dryrun -eq 1 ]
 			then
-				if [ $((qc - 1)) -gt $MAX_QUERIES ]
+				show_rollback $rollback_file
+				display "Dry run results:" 2
+				display "Errors: $total_errors  Warnings: $total_warnings<BR>" 2
+				if [ $total_errors -gt 0 -o $total_warnings -gt 0 ] 
 				then
-					display "Maximum number of queries ($MAX_QUERIES) exceeded. Please remove some of them in order to be able to execute your statements." 1
+					display "There are errors or warnings. Please resolve the problem(s) and retry the dry run." 2
 				else
-					show_rollback $rollback_file
-					display "Dry run results:" 2
-					display "Errors: $total_errors  Warnings: $total_warnings<BR>" 2
-					if [ $total_errors -gt 0 -o $total_warnings -gt 0 ] 
-					then
-						display "There are errors or warnings. Please resolve the problem(s) and retry the dry run." 2
-					else
-						display "This was a dry run. Please verify the rollback code above, then remove the flag to execute the query." 2
-					fi
+					display "This was a dry run. Please verify the rollback code above, then remove the flag to execute the query." 2
 				fi
 				mysql_query "ROLLBACK" > /dev/null
+				cleanup
 				rm -f $rollback_file ${rollback_file}_*_dump.gz 
 			else
 				if [ $qc -gt 0 ]
@@ -1116,10 +1123,12 @@ then
 					if [ $total_errors -gt 0 -o $total_warnings -gt 0 ] 
 					then
 						mysql_query "ROLLBACK" > /dev/null
+						cleanup
 						rm -f $rollback_file ${rollback_file}_*_dump.gz 
 						display "Execution failed!  Your changes have been rolled back.  Errors: $total_errors  Warnings: $total_warnings" 1
 					else
 						mysql_query "COMMIT" > /dev/null
+						cleanup
 						display "Done. Rollback statements saved in $rollback_file on $(hostname)." 0
 					fi
 				fi
