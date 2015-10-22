@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-VERSION="0.4.3"
+VERSION="0.4.4"
 #
 # NOTICE: CONFIG FILE
 # Config file /etc/dbgranter.conf should contain the following:
@@ -18,7 +18,7 @@ rgrant=""
 grants=""
 changes=0
 tmpf=/tmp/dbgranter.$$
-trap 'rm -f $tmpf 0'
+trap 'rm -f $tmpf' 0
 set -f
 vpn_mask="$(echo $REMOTE_ADDR | cut -d"." -f 1-3).%"
 #
