@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="0.11.8"
+VERSION="1.0.0"
 BASE=/usr/local/executor
 MAX_QUERIES=500
 #
@@ -15,11 +15,13 @@ kill_backq=0
 default_db=""
 closing_tags="</FONT></BODY></HTML>"
 message=""
-st_errors=0
+total_warnings=0
+total_errors=0
 tmpf=/tmp/executor.$$
-res_stdout=/tmp/executor_stdout.$$
-res_stderr=/tmp/executor_stderr.$$
-trap 'rm -f $tmpf $res_stdout $res_stderr' 0
+warnings_tmpf=/tmp/executor.warn.$$
+errors_tmpf=/tmp/executor.err.$$
+temp_table_name=_executor_$$
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf' 0
 
 unescape_input()
 {
@@ -59,6 +61,121 @@ debug() {
 	d_text=$(echo "$1" | od -va)
 	message="$message<BR>DEBUG:<BR>$d_text<BR>";
 	echo "$1" >> /usr/local/executor/log/debug.log
+}
+
+mysql_debug()
+{
+	echo "$1" >> /usr/local/executor/log/mysql_debug.log
+}
+
+connection_setup()
+{
+	coproc mysqlc { mysql -ANnfrvv -u "$user" -p"$password" -h "$host" "$default_db" 2>&1; } 
+	mysql_query "BEGIN" > /dev/null
+	mysql_query "SET NAMES utf8" > /dev/null
+}
+
+mysql_query()
+{
+	sw=0
+	rm -f $errors_tmpf
+	thisquery="${1/# /}"
+	[ "${1,,}" == "show warnings" ] && sw=1
+	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$default_db"] 
+	then
+		querybuf="$thisquery"
+		mysql_query "USE $2"
+		thisquery="$querybuf"
+	fi
+	skip=0
+	error=0
+	warning_text=""
+	qtype=$(echo ${thisquery,,} | cut -d" " -f 1)
+	echo "$thisquery;" >&${mysqlc[1]}
+	mysql_debug "mysql>$thisquery;"
+	while read -u ${mysqlc[0]} row
+	do
+		if [ "$row" = "--------------" ]
+		then
+			case $skip in
+				0) skip=1;;
+				1) skip=0;;
+			esac
+			continue
+		fi
+		[ $skip -eq 1 ] && continue
+		[ "$row" = "" ] && continue
+		#echo "loop: $sw $thisquery  \"$row\"" >> /tmp/loop_debug.log
+		case $sw in
+			0)
+				case "$qtype" in
+					'use')
+							echo "$row"
+							mysql_debug "$row"
+							[[ $row == *"Database changed"* ]] && break
+							;;
+					'update')
+							echo "$row"
+							mysql_debug "$row"
+							[[ $row == *"Rows matched:"* ]] && break
+							;;
+					'select'|'show')
+							[[ $row == "Empty set" ]] && break
+							[[ $row == *"row"*"in set"* ]] && break
+							[[ $row == "ERROR "* ]] && break
+							echo "$row"
+							mysql_debug "$row"
+							;;
+					*)
+							echo "$row"
+							mysql_debug "$row"
+							[[ $row == *"row"*"affected"* ]] && break
+							;;
+				esac
+				;;
+			1)
+				[[ $row == "Empty set" ]] && break
+				[[ $row == *"row"*"in set"* ]] && break
+				echo "$row"
+				mysql_debug "$row"
+				;;
+		esac
+		[[ $row == "ERROR "* ]] && break
+	done
+	#echo "loop: $sw $thisquery  **EXIT**" >> /tmp/loop_debug.log
+	if [[ $row == "ERROR "* ]]
+	then
+		mysql_debug "$row"
+		echo "$row" > $errors_tmpf
+		error=1
+		return
+	fi
+	if [ $sw -eq 0 -a $error -eq 0 ]
+	then
+		case "$qtype" in
+			'begin'|'use'|'show'|'select'|'set'|'commit'|'rollback'|'create')
+				;;
+			*)
+				qtypebuf="$qtype"
+				warning_text=$(mysql_query "SHOW WARNINGS")
+				echo $warning_text > $warnings_tmpf
+				qtype="$qtypebuf"
+				;;
+		esac
+	fi
+}
+
+consistent_dump()
+{
+	echo "SET SESSION default_storage_engine='MYISAM'; CREATE TABLE $1.$temp_table_name SELECT * FROM $1.$2 LIMIT 0" | mysql -A -u "$user" -p"$password" -h"$host" > /dev/null 2>&1
+	mysql_query "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED" > /dev/null
+	mysql_query "INSERT INTO $1.$temp_table_name SELECT * FROM $1.$2 WHERE $3" > /dev/null
+	mysql_query "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ" > /dev/null
+	case $4 in
+		0) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$user" --password="$password" --where "$3" --host "$host" "$1" "$temp_table_name" | sed -e "s/$temp_table_name/$2/g";; 
+		1) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$user" --password="$password" --host "$host" --replare "$1" "$temp_table_name" | sed -e "s/$temp_table_name/$2/g";;
+	esac
+	echo "DROP TABLE $1.$temp_table_name" | mysql -A -u "$user" -p"$password" -h"$host" > /dev/null 2>&1 &
 }
 
 show_form()
@@ -158,96 +275,44 @@ post_checks()
 
 run_statement()
 {
-	q_warning=""
-	q_result=""
-	q_last_id=""
-	last_id=""
-	case $2 in
-		0)
-			(
-				echo "SET NAMES utf8;"
-				echo "$1;"
-				echo "SHOW WARNINGS;"
-				echo "SELECT LAST_INSERT_ID();"
-			) | mysql -u "$user" -p"$password" -h "$host" -vv "$db" > $res_stdout 2> $res_stderr
+	error=0
+	result=$(mysql_query "$1")
+	warning_text=$(cat $warnings_tmpf)
+	error_text=$(cat $errors_tmpf)
+	[ "$warning_text" != "" ] && total_warnings=$((total_warnings+1))
+	if [ "$error_text" != "" ]
+	then
+		error=1
+		total_errors=$((total_errors+1))
+	fi
+	case $(echo ${1,,} | cut -d" " -f 1) in
+		'insert'|'replace') 
+			q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()")
 			;;
-		1)
-			(
-				echo "SET NAMES utf8;"
-				echo "BEGIN;"
-				echo "$1;"
-				echo "SHOW WARNINGS;"
-				echo "SELECT LAST_INSERT_ID();"
-				echo "ROLLBACK;"
-			) | mysql -u "$user" -p"$password" -h "$host" -vv "$db" > $res_stdout 2> $res_stderr
-			#display "DEBUG STDOUT: $(cat $res_stdout)" 0
-			#display "DEBUG STDERR: $(cat $res_stderr)" 0
+		*)
+			q_last_id=0
 			;;
-	esac
-	my_err=$(cat $res_stdout | fgrep -v Bye)
-	c=0
-	saveIFS="$IFS"
-	IFS="
-"
-	warnings=$(echo "$my_err" | fgrep -v "Warnings: 0" | fgrep -c "Warning")
-	for row in $(echo "$my_err")
-	do
-		#display "DEBUG-$c $row" 0
-		if [ "$row" = "--------------" ]
-		then
-			c=$(($c + 1))
-			continue
-		fi
-		case $2 in
-			0)	case $c in
-					0) q_error="$row";;
-					4) q_result="$q_result<br>$row";;
-					6) if [ $warnings -gt 0 ]
-					   then
-						if [ $(echo $row | fgrep -c " in set") -eq 0 ]
-						then
-							q_warning="$q_warning$row<br>"
-						fi
-					   fi;;
-					8) q_last_id="$q_last_id$(echo $row | egrep -v "LAST|row")";;
-				esac
-				;;
-			1)	case $c in
-					0) q_error="$row";;
-					6) q_result="$q_result<br>$row";;
-					8) if [ $warnings -gt 0 ]
-					   then
-						if [ $(echo $row | fgrep -c " in set") -eq 0 ]
-						then
-							q_warning="$q_warning$row<br>"
-						fi
-					   fi;;
-					10) q_last_id="$q_last_id$(echo $row | egrep -v "LAST|row")";;
-				esac
-				;;
-		esac
-	done
-	IFS="$saveIFS"
-	if [ -s $res_stderr ]
+	esac	
+	if [ $error -eq 1 ]
 	then
 		case $2 in
 			0)
-				display "$(cat $res_stderr)" 1
-				statement_error=1
+				display "$result" 1
+				display "$warnings" 3
 				;;
 			1) 	
-				display "DRY RUN RESULT: $(cat $res_stderr)" 3
+				display "<BR>DRY RUN RESULT: $error_text" 1
 				;;
 				
 		esac
 	else
 		last_id=$q_last_id
 		case $2 in
-			0)	display "$q_result" 2
-				display "$q_warning" 3
+			0)	display "$result" 2
+				display "$warnings" 3
 				log "$1"
 				;;
-			1) 	display "DRY RUN RESULT:<BR>$q_result<BR>$q_warning" 3
+			1) 	display "<BR>DRY RUN RESULT:<BR>$result<BR>$warning_text" 3
 				;;
 		esac
 	fi
@@ -283,7 +348,7 @@ check_key()
 
 num_rows()
 {
-	echo "select TABLE_ROWS from information_schema.tables where TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table';" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db"
+	mysql_query  "SELECT TABLE_ROWS FROM information_schema.tables WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table';" 
 }
 
 replace_rollback()
@@ -293,19 +358,22 @@ replace_rollback()
 		0) 	rr_col_names=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d "[,]"))
 			rr_q="$1"
 			;;
-		1) 	rr_col_names_c=$(echo "select GROUP_CONCAT(COLUMN_NAME) from information_schema.COLUMNS where TABLE_SCHEMA = '$db' and TABLE_NAME = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password")
+		1) 	
+			rr_col_names_c=$(mysql_query "SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'") 
 			rr_col_names=($(echo $rr_col_names_c | tr "[,]" "[ ]"))
 			rr_q=$(echo "$1" | sed -e "s/VALUES/($rr_col_names_c) values/gi")
 			;;
 	esac
-	rr_unique=$(echo "select CONSTRAINT_NAME from information_schema.TABLE_CONSTRAINTS where TABLE_SCHEMA = '$db' and TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE'" | mysql -ANr -h "$host" -u "$user" -p"$password")
+	rr_unique=$(mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE'")
 	if [ "$rr_unique" != "" ]
 	then
-		rr_ukeys=($(echo "select COLUMN_NAME from information_schema.KEY_COLUMN_USAGE where CONSTRAINT_NAME = '$rr_unique' AND TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password" | tr "[\n]" "[ ]"))
+		rs=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_NAME = '$rr_unique' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
+		rr_ukeys=($(echo "$rs" | tr "[\n]" "[ ]"))
 	else
 		unset rr_ukeys
 	fi
-	rr_keys=($(echo "select COLUMN_NAME from information_schema.KEY_COLUMN_USAGE where CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' and table_name = '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password" | tr "[\n]" "[ ]"))
+	rs=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
+	rr_keys=($(echo "$rs" | tr "[\n]" "[ ]"))
 	if [ "$rr_keys" = "" -a "$rr_unique" = "" ]
 	then
 		echo "-- The table lacks an unique index. Rollback is not possible."
@@ -410,7 +478,7 @@ replace_rollback()
 		done
 		echo "SET NAMES utf8;"
 		echo "DELETE FROM $table WHERE $rr_where;"
-		[ $replace -eq 1 ] && mysqldump --skip-opt --skip-trigger --compact --no-create-info --single-transaction --user "$user" --password="$password" --where "$rr_where" --host "$host" "$db" "$table" 
+		[ $replace -eq 1 ] && consistent_dump "$db" "$table" "$rr_where" 0
 		IFS="
 "
 	done
@@ -418,23 +486,25 @@ replace_rollback()
 
 get_pk()
 {
-	echo "show index from $table where Key_name = 'PRIMARY'" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db" | cut -f 5 | tr "[\n]" "[ ]" | sed -e "s/ $//g"
+	rs=$(mysql_query "SHOW INDEX FROM $db.$table WHERE KEY_NAME = 'PRIMARY'" "$db")
+	echo "$rs" | cut -f 5 | tr "[\n]" "[ ]" | sed -e "s/ $//g"
 }
 			
 is_autoinc()
 {
 	pk=$(get_pk)
-	echo "select extra from information_schema.columns where table_schema = '$db' and table_name = '$table' and column_name = '$pk'" | mysql -ANr -h "$host" -u "$user" -p"$password" | fgrep -c auto_increment
+	rs=$(mysql_query "SELECT EXTRA FROM information_schema.columns WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$pk'")
+	echo "$rs" | fgrep -c auto_increment
 }
 			
 index_name()
 {
-	echo "select CONSTRAINT_NAME from information_schema.KEY_COLUMN_USAGE where TABLE_SCHEMA = '$db' and TABLE_NAME = '$table' and COLUMN_NAME = '$1' AND REFERENCED_COLUMN_NAME IS NULL" | mysql -ANr -h "$host" -u "$user" -p"$password"
+	mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$1' AND REFERENCED_COLUMN_NAME IS NULL"
 }
 
 index_parts()
 {
-	echo "select count(*) from information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' and CONSTRAINT_NAME = '$1'" | mysql -ANr -h "$host" -u "$user" -p"$password"
+	mysql_query "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_NAME = '$1'"
 }
 
 check_pk_use()
@@ -475,7 +545,7 @@ check_table_presence()
 		db=$(echo $st | cut -d"." -f 1)
 		table=$(echo $st | cut -d"." -f 2)
 	fi
-	there=$(echo "select count(*) from information_schema.tables where table_schema = '$db' and table_name= '$table'" | mysql -ANr -h "$host" -u "$user" -p"$password")
+	there=$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME= '$table'")
 	if [ $there -eq 0 ]
 	then
 		display "No table named \"$table\" in schema \"$db\"" 1
@@ -490,7 +560,8 @@ check_columns()
 	for arg in $1
 	do
 		[ $(echo $arg | fgrep -c ".") -gt 0 ] && arg=$(echo $arg | cut -d"." -f 2)
-		if [ $(echo "select count(*) from information_schema.columns where table_schema = '$db' and table_name = '$table' and column_name = '$arg'" | mysql -ANr -h "$host" -u "$user" -p"$password") -eq 0 ]
+		cc=$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$arg'")
+		if [ $cc -eq 0 ]
 		then
 			display "Column \"$arg\" does not exist" 1
 			columns_ok=0
@@ -528,6 +599,7 @@ rollback_pkwhere()
 
 query_delete()
 {
+	total_errors=$((total_errors+1))
 	display "Query type: DELETE" 0
 	IFS=" " q=($1)
 	query_id=$2
@@ -616,25 +688,27 @@ query_delete()
 	then
 		parsed_db=$(echo $table | cut -d"." -f 1)	
 		parsed_table=$(echo $table | cut -d"." -f 2)	
-		mysqldump --skip-opt --skip-trigger --compact --no-create-info --single-transaction --user "$user" --password="$password" --where "$where" --host "$host" "$parsed_db" "$parsed_table" > $tmpf
+		consistent_dump "$parsed_db" "$parsed_table" "$where" 0 > $tmpf
 		if [ -s $tmpf ] 
 		then
 			echo "USE $parsed_db" >> $rollback_file
 			cat $tmpf >> $rollback_file
 		fi
 	else
-		mysqldump --skip-opt --skip-trigger --compact --no-create-info --single-transaction --user "$user" --password="$password" --where "$where" --host "$host" "$db" "$table" > $tmpf
+		consistent_dump "$db" "$table" "$where" 0 > $tmpf
 		if [ -s $tmpf ] 
 		then
 			echo "USE $db" >> $rollback_file
 			cat $tmpf >> $rollback_file
 		fi
 	fi
+	total_errors=$((total_errors-1))
 	run_statement "$1" $dryrun
 }
 
 query_insert()
 {
+	total_errors=$((total_errors+1))
 	display "Query type: ${3^^}" 0
 	[ "${3,,}" = "replace" ] && replace=1 || replace=0
 	IFS=" " q=($(echo $1 | sed -e "s/(/ (/ig"))
@@ -651,17 +725,18 @@ query_insert()
 	[ $table_present -ne 1 ] && return
 	display "Schema: $db" 0
 	display "Table: $table" 0
+	total_errors=$((total_errors-1))
 	run_statement "$1" $dryrun
+	[ $error -eq 0 ] && replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
 	if [ $dryrun -eq 0 ]
 	then
-		[ $statement_error -eq 1 ] && return
 		[ $replace -eq 0 -a $last_id -gt 0 ] && display "AUTO-INC value assigned:  $last_id" 3
 	fi
-	replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
 }
 
 query_update()
 {
+	total_errors=$((total_errors+1))
 	display "Query type: UPDATE" 0
 	IFS=" " q=($1)
 	query_id=$2
@@ -790,19 +865,21 @@ query_update()
 					IFS=" "
 					rbw=$(rollback_pkwhere "$pk")
 					IFS="$saveIFS"
-					echo -e "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE ${wa[0]}='$naked_arg'" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db" >> $rollback_file
+					mysql_query "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE ${wa[0]}='$naked_arg' /* update 1 */" "$db" >> $rollback_file
 				else
 					IFS="
 "
-					for row in $(echo "SELECT $pk FROM $table WHERE ${wa[0]}='$naked_arg'" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db")
+					for row in $(mysql_query "SELECT $pk FROM $table WHERE ${wa[0]}='$naked_arg' /* update 2 */" "$db")
                                 	do
-                                        	res=$(echo -e "SET NAMES utf8; SELECT $rbs FROM $table WHERE $pk = '$row';" | mysql -ANr -h $host -u "$user" -p"$password" "$db" | sed -e "s/'NULL'/NULL/g")
+                                        	res=$(mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 3 */" "$db")
+                                        	res=$(echo "$res" | sed -e "s/'NULL'/NULL/g")
                                         	echo "UPDATE $table SET $res WHERE $pk = '$row';" >> $rollback_file
                                 	done
 					IFS="$saveIFS"
 				fi
 			else
-				res=$(echo -e "SET NAMES utf8; SELECT $rbs FROM $table WHERE ${wa[0]}='$naked_arg'" | mysql -ANr -h $host -u "$user" -p"$password" "$db" | sed -e "s/'NULL'/NULL/g")
+				res=$(mysql_query "SELECT $rbs FROM $table WHERE ${wa[0]}='$naked_arg' /* update 4 */" "$db")
+				res=$(echo "$res" | sed -e "s/'NULL'/NULL/g")
 				if [ "$res" != "" ]
 				then
 					rollback=1
@@ -822,29 +899,31 @@ query_update()
 			if [ $pkc -gt 1 ]
 			then
 				rbw=$(rollback_pkwhere "$pk")
-				echo -e "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE $where" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db" >> $rollback_file
+				mysql_query "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE $where /* update 5 */" "$db" >> $rollback_file
 			else
 				saveIFS="$IFS"
 				IFS="
 "
-				for row in $(echo "SELECT $pk FROM $table WHERE $where" | mysql -ANr -h "$host" -u "$user" -p"$password" "$db")
+				for row in $(mysql_query "SELECT $pk FROM $table WHERE $where /* update 6 */" "$db")
 				do
-					res=$(echo -e "SET NAMES utf8; SELECT $rbs FROM $table WHERE $pk = '$row';" | mysql -ANr -h $host -u "$user" -p"$password" "$db" | sed -e "s/'NULL'/NULL/g")
+					res=$(mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 7 */" "$db")
+					res=$(echo "$res" | sed -e "s/'NULL'/NULL/g")
 					echo "UPDATE $table SET $res WHERE $pk = '$row';" >> $rollback_file
 				done
 				IFS="$saveIFS"
 			fi
 		else
-			count=$(echo "SELECT COUNT(*) FROM $table WHERE $where" | mysql -ANr -h $host -u "$user" -p"$password" "$db")
+			count=$(mysql_query "SELECT COUNT(*) FROM $table WHERE $where /* update 8 */" "$db")
 			if [ $count -gt 1 ]
 			then
 				# assumes small table, add a check
 				rollback=1
-				mysqldump --no-create-info --skip-opt --skip-trigger --single-transaction --where "$where" --replace --user "$user" --password="$password" --host "$host" "$db" "$table" | gzip  > ${rollback_file}_${query_id}_dump.gz
-				echo "-- Reimport table $table using ${rollback_file}_${query_id}_dump.gz" >> $rollback_file
+				consistent_dump "$db" "$table" "$where" 1 | gzip  > ${rollback_file}_${query_id}_dump.gz
+				echo "-- Run this script ${rollback_file}_${query_id}_dump.gz" >> $rollback_file
 			else
 				rbs=$(rollback_args "$cols")
-				res=$(echo -e "SET NAMES utf8; SELECT $rbs FROM $table WHERE $where" | mysql -ANr -h $host -u "$user" -p"$password" "$db" | sed -e "s/'NULL'/NULL/g")
+				res=$(mysql_query "SELECT $rbs FROM $table WHERE $where /* update 9 */" "$db")
+				res=$(echo "$res" | sed -e "s/'NULL'/NULL/g")
 				if [ "$res" != "" ]
 				then
 					rollback=1
@@ -853,6 +932,7 @@ query_update()
 			fi
 		fi
 	fi
+	total_errors=$((total_errors-1))
 	run_statement "$1" $dryrun
 }
 
@@ -892,7 +972,7 @@ process_query() {
 	q_nb=$(echo "$1" | sed -e "s/^ *//")
 	IFS=" " q=($q_nb)
 	display "----- Processing query #$2 ------" 2
-	statement_error=0
+	mysql_debug "-- Query #$2"
 	dq="${q[@]}"
 	dqq=$(pretty_print "$dq")
 	display "$dqq" 2
@@ -912,7 +992,6 @@ process_query() {
 		*) display "Syntax error near \"${q[0]}\"" 1
 			;;
 	esac
-	[ $statement_error -eq 1 ] && st_errors=$((st_errors + 1))
 	display "" 0
 }
 
@@ -972,6 +1051,7 @@ then
 				display "Connected to $host" 0
 				display "$(mysqladmin -u "$user" -p"$password" -h "$host" version | tail -7)" 0
 			else
+				connection_setup 
 				IFS=";"
 				qc=0
 				if [ "$ticket" != "" ]
@@ -1019,18 +1099,28 @@ then
 					display "Maximum number of queries ($MAX_QUERIES) exceeded. Please remove some of them in order to be able to execute your statements." 1
 				else
 					show_rollback $rollback_file
-					display "This was a dry run. Please verify the rollback code above, then remove the flag to execute the query." 2
+					display "Dry run results:" 2
+					display "Errors: $total_errors  Warnings: $total_warnings<BR>" 2
+					if [ $total_errors -gt 0 -o $total_warnings -gt 0 ] 
+					then
+						display "There are errors or warnings. Please resolve the problem(s) and retry the dry run." 2
+					else
+						display "This was a dry run. Please verify the rollback code above, then remove the flag to execute the query." 2
+					fi
 				fi
+				mysql_query "ROLLBACK" > /dev/null
 				rm -f $rollback_file ${rollback_file}_*_dump.gz 
 			else
 				if [ $qc -gt 0 ]
 				then
-					if [ $st_errors -eq 0 ]
+					if [ $total_errors -gt 0 -o $total_warnings -gt 0 ] 
 					then
-						display "Done. Rollback statements saved in $rollback_file on $(hostname)." 0
+						mysql_query "ROLLBACK" > /dev/null
+						rm -f $rollback_file ${rollback_file}_*_dump.gz 
+						display "Execution failed!  Your changes have been rolled back.  Errors: $total_errors  Warnings: $total_warnings" 1
 					else
-						display "$st_errors out of $qc queries failed!" 1
-						display "Rollback statements for successful queries saved in $rollback_file on $(hostname)." 0
+						mysql_query "COMMIT" > /dev/null
+						display "Done. Rollback statements saved in $rollback_file on $(hostname)." 0
 					fi
 				fi
 			fi

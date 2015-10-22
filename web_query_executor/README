@@ -9,6 +9,7 @@ What you get:
 - automatic check for PK and/or index use (avoid locking table scans!!)
 - dry run capability (check query and compute rollback statements without modifying the data)
 - log of everything executed against the database
+- transaction consistency: all queries are run within the same transaction so an all-or-nothing modification is enforced
 
 The user using this script must have proper grants on the database from the host the CGI script runs from.
 The script runs under apache httpd, put it in the cgi-bin directory and configure accordingly.
