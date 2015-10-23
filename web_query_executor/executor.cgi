@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.0.6"
+VERSION="1.0.13"
 BASE=/usr/local/executor
 #
 set -f
@@ -20,8 +20,9 @@ warnings_tmpf=/tmp/executor.warn.$$
 errors_tmpf=/tmp/executor.err.$$
 output_tmpf=/tmp/executor.out.$$
 deleted_tables_tmpf=/tmp/executor.del.$$
+cached_db_tmpf=/tmp/executor.cdb.$$
 temp_table_name=_executor_$$
-trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf' 0
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf' 0
 
 unescape_input()
 {
@@ -50,10 +51,10 @@ escape_html()
 
 display() {
 	case "$2" in
-		0) echo "$1<BR>" >> $output_tmpf;;
-		1) echo "<FONT COLOR=\"Red\">ERROR: $1</FONT><BR>" >> $output_tmpf;;
-		2) echo "<FONT COLOR=\"Green\">$1</FONT><BR>" >> $output_tmpf;;
-		3) echo "<FONT COLOR=\"Orange\">$1</FONT><BR>" >> $output_tmpf;;
+		0) echo "$1" >> $output_tmpf;;
+		1) echo "<FONT COLOR=\"Red\">ERROR: $1</FONT>" >> $output_tmpf;;
+		2) echo "<FONT COLOR=\"Green\">$1</FONT>" >> $output_tmpf;;
+		3) echo "<FONT COLOR=\"Orange\">$1</FONT>" >> $output_tmpf;;
 	esac
 }
 
@@ -85,10 +86,11 @@ mysql_query()
 	error=0
 	warning_text=""
 	qtype=$(echo ${thisquery,,} | cut -d" " -f 1)
-	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$default_db" ] 
+	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$(cat $cached_db_tmpf 2>/dev/null)" ] 
 	then
 		echo "use $2;"  >&${mysqlc[1]}
 		mysql_debug "mysql>use $2;"
+		echo "$2" > $cached_db_tmpf
 	fi
 	echo "$thisquery;" >&${mysqlc[1]}
 	mysql_debug "mysql>$thisquery;"
@@ -179,7 +181,7 @@ consistent_dump()
 
 cleanup()
 {
-	for t in $(cat $deleted_tables_tmpf)
+	for t in $(cat $deleted_tables_tmpf 2>/dev/null)
 	do
 		echo "DROP TABLE $t;" 
 	done | mysql -A -u "$user" -p"$password" -h"$host" > /dev/null 2>&1
@@ -284,7 +286,7 @@ run_statement()
 	error=0
 	result=$(mysql_query "$1" "$db")
 	warning_text=$(cat $warnings_tmpf)
-	error_text=$(cat $errors_tmpf)
+	error_text=$(cat $errors_tmpf 2>/dev/null)
 	[ "$warning_text" != "" ] && total_warnings=$((total_warnings+1))
 	if [ "$error_text" != "" ]
 	then
@@ -293,7 +295,7 @@ run_statement()
 	fi
 	case $(echo ${1,,} | cut -d" " -f 1) in
 		'insert'|'replace') 
-			[ $2 -eq 0 ] && q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()") || q_last_id=-1
+			[ $2 -eq 0 ] && q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()") || q_last_id=0
 			;;
 		*)
 			q_last_id=0
@@ -372,7 +374,7 @@ replace_rollback()
 	esac
 	if [ "$rr_cached_table" != "$db.$table" ]
 	then
-		rr_unique=$(mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE'")
+		rr_unique=$(mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE' LIMIT 1")
 		if [ "$rr_unique" != "" ]
 		then
 			rs=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_NAME = '$rr_unique' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
@@ -407,7 +409,8 @@ replace_rollback()
 		rr_cached_table="$db.$table"
 	fi
 	echo "-- Rollback instructions for query $qc"
-	if [ $rr_nkeys != $rr_nkeys_used -a $last_id -eq 0 ]
+	echo "SET NAMES utf8;"
+	if [ $rr_nkeys != $rr_nkeys_used -a $auto_increment -eq 0 ]
 	then
 		if [ "$rr_unique" = "" ]
 		then
@@ -423,12 +426,12 @@ replace_rollback()
 	fi
 	rr_using_primary=0
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1
-	[ $last_id -ne 0  ] && rr_using_primary=1
+	[ $auto_increment -eq 1  ] && rr_using_primary=1
 	# if both primary key and unique index are available, prefer unique index for rollback
 	[ $rr_nukeys -gt 0 -a $rr_nukeys -eq $rr_nukeys_used ] && rr_using_primary=0
 	#echo "-- DEBUG: keys=$rr_nkeys used=$rr_nkeys_used ukeys=$rr_nukeys used=$rr_nukeys_used using_primary=$rr_using_primary"
 	# special case: autoinc pk and no unique index
-	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $last_id -ne 0 ]
+	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $auto_increment -eq 1 ]
 	then
 		case $dryrun in
 			0)
@@ -437,7 +440,7 @@ replace_rollback()
 				return
 				;;
 			1)
-				if [ $dryrun -eq 1 -a $last_id -ne 0 ]
+				if [ $dryrun -eq 1 -a $auto_increment -eq 1 ]
 				then
 					echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." 
 					return
@@ -485,7 +488,6 @@ replace_rollback()
 			esac
 			rr_idx=$((rr_idx + 1))
 		done
-		echo "SET NAMES utf8;"
 		echo "DELETE FROM $table WHERE $rr_where;"
 		[ $replace -eq 1 ] && consistent_dump "$db" "$table" "$rr_where" 0
 		IFS="
@@ -499,11 +501,11 @@ get_pk()
 	echo "$rs" | cut -f 5 | tr "[\n]" "[ ]" | sed -e "s/ $//g"
 }
 			
-is_autoinc()
+check_autoincrement()
 {
-	pk=$(get_pk)
-	rs=$(mysql_query "SELECT EXTRA FROM information_schema.columns WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$pk'")
-	echo "$rs" | fgrep -c auto_increment
+	[ "$ai_cache" = "$db.$table" ] && return
+	auto_increment=$(mysql_query "SELECT IF(COUNT(*) = 1, 1, 0) FROM information_schema.columns WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND EXTRA = 'auto_increment'")
+	ai_cache="$db.$table"
 }
 			
 index_name()
@@ -539,7 +541,6 @@ check_pk_use()
 check_table_presence()
 {
 	table_present=1
-	[ "$ctp_cache" = "$db.$table" ] && return
 	if [ $(echo $table | fgrep -c "." ) -eq 0 ]
 	then
 		if [ "$default_db" = "" ]
@@ -555,6 +556,7 @@ check_table_presence()
 		db=$(echo $st | cut -d"." -f 1)
 		table=$(echo $st | cut -d"." -f 2)
 	fi
+	[ "$ctp_cache" = "$db.$table" ] && return
 	there=$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME= '$table'")
 	if [ $there -eq 0 ]
 	then
@@ -735,14 +737,24 @@ query_insert()
 	echo $table | fgrep -q "(" && table=$(echo $table | cut -d "(" -f 1)
 	check_table_presence
 	[ $table_present -ne 1 ] && return
+	check_autoincrement
 	display "Schema: $db" 0
 	display "Table: $table" 0
 	total_errors=$((total_errors-1))
-	run_statement "$1" $dryrun
-	[ $error -eq 0 ] && replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
+	case $replace in
+		0) 
+			run_statement "$1" $dryrun
+			[ $error -eq 0 ] && replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
+			;;
+		1)
+			# if using REPLACE, rollback code needs to be executed before the actual statement
+			replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
+			run_statement "$1" $dryrun
+			;;
+	esac
 	if [ $dryrun -eq 0 ]
 	then
-		[ $replace -eq 0 -a $last_id -gt 0 ] && display "AUTO-INC value assigned:  $last_id" 3
+		[ $replace -eq 0 -a $auto_increment -eq 1 ] && display "AUTO-INC value assigned:  $last_id" 3
 	fi
 }
 
@@ -976,7 +988,8 @@ pretty_print()
 open_quotes()
 {
 	niq=$(echo "$1" | sed -e "s/\\\'//g")
-	nniq=${niq//[^\']}
+	# this triggers a bash bug in some circumstances... nniq=${niq//[^\']}
+	nniq=$(echo "$niq" | tr -dc "'")
 	printf "%d %% 2\n" ${#nniq} | bc
 }
 
