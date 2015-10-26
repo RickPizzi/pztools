@@ -3,8 +3,12 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.0.13"
+VERSION="1.1.2"
 BASE=/usr/local/executor
+# all users of this tool needs INSERT,SELECT,DROP AND CREATE on this schema
+EXECUTOR_USER=executor
+EXECUTOR_PASSWORD='RunTimeFun_'
+EXECUTOR_SCHEMA=executor
 #
 set -f
 post=0
@@ -168,15 +172,15 @@ mysql_query()
 
 consistent_dump()
 {
-	echo "SET SESSION default_storage_engine='MYISAM'; CREATE TABLE $1.${temp_table_name}_${qc} SELECT * FROM $1.$2 LIMIT 0" | mysql -A -u "$user" -p"$password" -h"$host" > /dev/null 2>&1
+	echo "SET SESSION default_storage_engine='MYISAM'; CREATE TABLE $EXECUTOR_SCHEMA.${temp_table_name}_${qc} SELECT * FROM $1.$2 LIMIT 0" | mysql -A -u "$EXECUTOR_USER" -p"$EXECUTOR_PASSWORD" -h"$host" > /dev/null 2>&1
 	mysql_query "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED" > /dev/null
-	mysql_query "INSERT INTO $1.${temp_table_name}_${qc} SELECT * FROM $1.$2 WHERE $3" "$db"> /dev/null
+	mysql_query "INSERT INTO $EXECUTOR_SCHEMA.${temp_table_name}_${qc} SELECT * FROM $1.$2 WHERE $3" "$db"> /dev/null
 	mysql_query "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ" > /dev/null
 	case $4 in
-		0) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$user" --password="$password" --where "$3" --host "$host" "$1" "${temp_table_name}_${qc}" | sed -e "s/${temp_table_name}_${qc}/$2/g";; 
-		1) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$user" --password="$password" --host "$host" --replace "$1" "${temp_table_name}_${qc}" | sed -e "s/${temp_table_name}_${qc}/$2/g";;
+		0) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$EXECUTOR_USER" --password="$EXECUTOR_PASSWORD" --where "$3" --host "$host" "$EXECUTOR_SCHEMA" "${temp_table_name}_${qc}" | sed -e "s/${temp_table_name}_${qc}/$2/g";; 
+		1) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$EXECUTOR_USER" --password="$EXECUTOR_PASSWORD" --host "$host" --replace "$EXECUTOR_SCHEMA" "${temp_table_name}_${qc}" | sed -e "s/${temp_table_name}_${qc}/$2/g";;
 	esac
-	echo "$1.${temp_table_name}_${qc}" >> $deleted_tables_tmpf
+	echo "$EXECUTOR_SCHEMA.${temp_table_name}_${qc}" >> $deleted_tables_tmpf
 }
 
 cleanup()
@@ -356,7 +360,9 @@ check_key()
 
 num_rows()
 {
-	mysql_query  "SELECT TABLE_ROWS FROM information_schema.tables WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table';" 
+	[ "$nr_cache" = "$db.$table" ] && return
+	rows=$(mysql_query  "SELECT TABLE_ROWS FROM information_schema.tables WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
+	nr_cache="$db.$table"
 }
 
 replace_rollback()
@@ -436,7 +442,8 @@ replace_rollback()
 		case $dryrun in
 			0)
 				[ "$db" != "" ] && echo "USE $db" 
-				echo "DELETE FROM $table WHERE $(get_pk) = '$last_id';"
+				get_pk
+				echo "DELETE FROM $table WHERE $pk = '$last_id';"
 				return
 				;;
 			1)
@@ -497,8 +504,10 @@ replace_rollback()
 
 get_pk()
 {
+	[ "$pk_cache" = "$db.$table" ] && return
 	rs=$(mysql_query "SHOW INDEX FROM $db.$table WHERE KEY_NAME = 'PRIMARY'" "$db")
-	echo "$rs" | cut -f 5 | tr "[\n]" "[ ]" | sed -e "s/ $//g"
+	pk=$(echo "$rs" | cut -f 5 | tr "[\n]" "[ ]" | sed -e "s/ $//g")
+	pk_cache="$db.$table"
 }
 			
 check_autoincrement()
@@ -510,12 +519,16 @@ check_autoincrement()
 			
 index_name()
 {
-	mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$1' AND REFERENCED_COLUMN_NAME IS NULL"
+	[ "$in_cache" = "$db.$table.$1" ] && return
+	idxname=$(mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$1' AND REFERENCED_COLUMN_NAME IS NULL")
+	in_cache="$db.$table.$1"
 }
 
 index_parts()
 {
-	mysql_query "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_NAME = '$1'"
+	[ "$ip_cache" = "$db.$table.$1" ] && return
+	idxcount=$(mysql_query "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_NAME = '$1'")
+	ip_cache="$db.$table.$1"
 }
 
 check_pk_use()
@@ -570,6 +583,7 @@ check_table_presence()
 
 check_columns()
 {
+	[ "$cc_cache" = "$db.$table.$1" ] && return
 	columns_ok=1
 	for arg in $1
 	do
@@ -582,6 +596,7 @@ check_columns()
 			return
 		fi
 	done
+	cc_cache="$db.$table.$1"
 }
 
 rollback_args()
@@ -675,8 +690,8 @@ query_delete()
 	for row in $(echo -e $wa)
 	do
 		fld=$(echo $row | cut -d"=" -f 1 | tr -d "[ ]")
-		idxname=$(index_name $fld)
-		idxcount=$(index_parts $idxname)
+		index_name $fld
+		index_parts $idxname
 		if [ "$prvidxname" != "$idxname" ]
 		then
 			if [ "$prvidxname" = "" ]
@@ -691,7 +706,8 @@ query_delete()
 	done
 	if [ $using_index -eq 0 ]
 	then
-		if [ $(num_rows) -ge 100000 ]
+		num_rows
+		if [ $rows -ge 100000 ]
 		then
 			display "WHERE condition not using an index and table is large, query cannot be executed" 1
 			return
@@ -840,17 +856,17 @@ query_update()
 	fi
 	rollback=0
 	wa=($(echo "$where" | sed -e "s/, /,/g"))
-	pk=$(get_pk "$where")
+	get_pk
 	pkc=$(echo $pk | wc -w)
 	pkwa=0
 	check_pk_use "$where" $pkc
 	if [ $pk_in_use -eq 0 ]
 	then
 		display "NOTICE: WHERE condition not using PK, switching to PK for safe rollback" 0
-		t_rows=$(num_rows)
-		if [ $t_rows -gt 1000000 -a $dryrun -eq 1 ]
+		num_rows
+		if [ $rows -gt 1000000 -a $dryrun -eq 1 ]
 		then
-			display "WARNING: large table $table: $t_rows rows, and query not using PK. Rollback generation could take some time" 3
+			display "WARNING: large table $table: $rows rows, and query not using PK. Rollback generation could take some time" 3
 		fi
 		pkwa=1
 	fi
