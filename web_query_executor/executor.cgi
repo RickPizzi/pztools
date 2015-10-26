@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.1.2"
+VERSION="1.1.4"
 BASE=/usr/local/executor
 # all users of this tool needs INSERT,SELECT,DROP AND CREATE on this schema
 EXECUTOR_USER=executor
@@ -299,7 +299,7 @@ run_statement()
 	fi
 	case $(echo ${1,,} | cut -d" " -f 1) in
 		'insert'|'replace') 
-			[ $2 -eq 0 ] && q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()") || q_last_id=0
+			[ $2 -eq 0 -a $auto_increment -eq 1 ] && q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()") || q_last_id=0
 			;;
 		*)
 			q_last_id=0
@@ -373,12 +373,16 @@ replace_rollback()
 			rr_q="$1"
 			;;
 		1) 	
-			rr_col_names_c=$(mysql_query "SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'") 
+			if [ "$rr_cache1" != "$db.$table" ] 
+			then
+				rr_col_names_c=$(mysql_query "SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'") 
+				rr_cache1="$db.$table"
+			fi
 			rr_col_names=($(echo $rr_col_names_c | tr "[,]" "[ ]"))
 			rr_q=$(echo "$1" | sed -e "s/VALUES/($rr_col_names_c) values/gi")
 			;;
 	esac
-	if [ "$rr_cached_table" != "$db.$table" ]
+	if [ "$rr_cache2" != "$db.$table" ]
 	then
 		rr_unique=$(mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE' LIMIT 1")
 		if [ "$rr_unique" != "" ]
@@ -412,7 +416,7 @@ replace_rollback()
 				[ "${nobq,,}" = "${arg2,,}" ] && rr_nukeys_used=$((rr_nukeys_used + 1))
 			done
 		done
-		rr_cached_table="$db.$table"
+		rr_cache2="$db.$table"
 	fi
 	echo "-- Rollback instructions for query $qc"
 	echo "SET NAMES utf8;"
