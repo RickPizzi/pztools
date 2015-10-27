@@ -3,12 +3,8 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.1.4"
+VERSION="1.1.5"
 BASE=/usr/local/executor
-# all users of this tool needs INSERT,SELECT,DROP AND CREATE on this schema
-EXECUTOR_USER=executor
-EXECUTOR_PASSWORD='RunTimeFun_'
-EXECUTOR_SCHEMA=executor
 #
 set -f
 post=0
@@ -23,10 +19,9 @@ tmpf=/tmp/executor.$$
 warnings_tmpf=/tmp/executor.warn.$$
 errors_tmpf=/tmp/executor.err.$$
 output_tmpf=/tmp/executor.out.$$
-deleted_tables_tmpf=/tmp/executor.del.$$
 cached_db_tmpf=/tmp/executor.cdb.$$
-temp_table_name=_executor_$$
-trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf' 0
+dump_tmpf=/tmp/executor.dmp.$$
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf' 0
 
 unescape_input()
 {
@@ -172,23 +167,15 @@ mysql_query()
 
 consistent_dump()
 {
-	echo "SET SESSION default_storage_engine='MYISAM'; CREATE TABLE $EXECUTOR_SCHEMA.${temp_table_name}_${qc} SELECT * FROM $1.$2 LIMIT 0" | mysql -A -u "$EXECUTOR_USER" -p"$EXECUTOR_PASSWORD" -h"$host" > /dev/null 2>&1
-	mysql_query "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED" > /dev/null
-	mysql_query "INSERT INTO $EXECUTOR_SCHEMA.${temp_table_name}_${qc} SELECT * FROM $1.$2 WHERE $3" "$db"> /dev/null
-	mysql_query "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ" > /dev/null
-	case $4 in
-		0) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$EXECUTOR_USER" --password="$EXECUTOR_PASSWORD" --where "$3" --host "$host" "$EXECUTOR_SCHEMA" "${temp_table_name}_${qc}" | sed -e "s/${temp_table_name}_${qc}/$2/g";; 
-		1) mysqldump --skip-opt --skip-trigger --compact --no-create-info --user "$EXECUTOR_USER" --password="$EXECUTOR_PASSWORD" --host "$host" --replace "$EXECUTOR_SCHEMA" "${temp_table_name}_${qc}" | sed -e "s/${temp_table_name}_${qc}/$2/g";;
-	esac
-	echo "$EXECUTOR_SCHEMA.${temp_table_name}_${qc}" >> $deleted_tables_tmpf
-}
-
-cleanup()
-{
-	for t in $(cat $deleted_tables_tmpf 2>/dev/null)
-	do
-		echo "DROP TABLE $t;" 
-	done | mysql -A -u "$user" -p"$password" -h"$host" > /dev/null 2>&1
+	mysql_query "SELECT * FROM $1.$2 WHERE $3" > $dump_tmpf
+	nl=$(cat $dump_tmpf | wc -l)
+	nt=$(cat $dump_tmpf | tr -dc "[\t]" | wc -c)
+	if [ $((nt % nl)) -gt 0 ]
+	then
+		echo "-- WARNING: column count does not match for all rows in the rollback code below."
+		echo "-- WARNING: very likely you have one or more rows with columns containing tabs in it."
+	fi
+	cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/INSERT INTO $2 VALUES ('/g" -e "s/$/);'/g"
 }
 
 show_form()
@@ -962,7 +949,7 @@ query_update()
 			then
 				# assumes small table, add a check
 				rollback=1
-				consistent_dump "$db" "$table" "$where" 1 | gzip  > ${rollback_file}_${query_id}_dump.gz
+				consistent_dump "$db" "$table" "$where" | gzip  > ${rollback_file}_${query_id}_dump.gz
 				echo "-- Run this script ${rollback_file}_${query_id}_dump.gz" >> $rollback_file
 			else
 				rbs=$(rollback_args "$cols")
@@ -1148,7 +1135,6 @@ then
 					display "This was a dry run. Please verify the rollback code above, then remove the flag to execute the query." 2
 				fi
 				mysql_query "ROLLBACK" > /dev/null
-				cleanup
 				rm -f $rollback_file ${rollback_file}_*_dump.gz 
 			else
 				if [ $qc -gt 0 ]
@@ -1156,12 +1142,10 @@ then
 					if [ $total_errors -gt 0 -o $total_warnings -gt 0 ] 
 					then
 						mysql_query "ROLLBACK" > /dev/null
-						cleanup
 						rm -f $rollback_file ${rollback_file}_*_dump.gz 
 						display "Execution failed!  Your changes have been rolled back.  Errors: $total_errors  Warnings: $total_warnings" 1
 					else
 						mysql_query "COMMIT" > /dev/null
-						cleanup
 						display "Done. Rollback statements saved in $rollback_file on $(hostname)." 0
 					fi
 				fi
