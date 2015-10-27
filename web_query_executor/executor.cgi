@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.1.5"
+VERSION="1.1.7"
 BASE=/usr/local/executor
 #
 set -f
@@ -120,7 +120,7 @@ mysql_query()
 							[[ $row == *"Rows matched:"* ]] && break
 							;;
 					'select'|'show')
-							[[ $row == "Empty set" ]] && break
+							[[ $row == *"Empty set"* ]] && break
 							[[ $row == *"row"*"in set"* ]] && break
 							[[ $row == "ERROR "* ]] && break
 							echo "$row"
@@ -134,7 +134,7 @@ mysql_query()
 				esac
 				;;
 			1)
-				[[ $row == "Empty set" ]] && break
+				[[ $row == *"Empty set"* ]] && break
 				[[ $row == *"row"*"in set"* ]] && break
 				echo "$row"
 				mysql_debug "$row"
@@ -167,15 +167,18 @@ mysql_query()
 
 consistent_dump()
 {
-	mysql_query "SELECT * FROM $1.$2 WHERE $3" > $dump_tmpf
-	nl=$(cat $dump_tmpf | wc -l)
-	nt=$(cat $dump_tmpf | tr -dc "[\t]" | wc -c)
-	if [ $((nt % nl)) -gt 0 ]
+	mysql_query "SELECT * FROM $1.$2 WHERE $3 /* cdump */" > $dump_tmpf
+	if [ -s $dump_tmpf ]
 	then
-		echo "-- WARNING: column count does not match for all rows in the rollback code below."
-		echo "-- WARNING: very likely you have one or more rows with columns containing tabs in it."
+		nl=$(cat $dump_tmpf | wc -l)
+		nt=$(cat $dump_tmpf | tr -dc "[\t]" | wc -c)
+		if [ $((nt % nl)) -gt 0 ]
+		then
+			echo "-- WARNING: column count does not match for all rows in the rollback code below."
+			echo "-- WARNING: very likely you have one or more rows with columns containing tabs in it."
+		fi
+		cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/INSERT INTO $2 VALUES ('/g" -e "s/$/);'/g"
 	fi
-	cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/INSERT INTO $2 VALUES ('/g" -e "s/$/);'/g"
 }
 
 show_form()
