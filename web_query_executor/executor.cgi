@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.1.7"
+VERSION="1.1.8"
 BASE=/usr/local/executor
 #
 set -f
@@ -171,13 +171,13 @@ consistent_dump()
 	if [ -s $dump_tmpf ]
 	then
 		nl=$(cat $dump_tmpf | wc -l)
-		nt=$(cat $dump_tmpf | tr -dc "[\t]" | wc -c)
+		nt=$(cat $dump_tmpf | tr -dc "\t" | wc -c)
 		if [ $((nt % nl)) -gt 0 ]
 		then
 			echo "-- WARNING: column count does not match for all rows in the rollback code below."
 			echo "-- WARNING: very likely you have one or more rows with columns containing tabs in it."
 		fi
-		cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/INSERT INTO $2 VALUES ('/g" -e "s/$/);'/g"
+		cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/INSERT INTO $2 VALUES ('/g" -e "s/$/');/g" -e "s/'NULL'/NULL/g"
 	fi
 }
 
@@ -359,7 +359,7 @@ replace_rollback()
 {
 	saveIFS="$IFS"
 	case "$3" in
-		0) 	rr_col_names=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d "[,]"))
+		0) 	rr_col_names=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d ","))
 			rr_q="$1"
 			;;
 		1) 	
@@ -368,7 +368,7 @@ replace_rollback()
 				rr_col_names_c=$(mysql_query "SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'") 
 				rr_cache1="$db.$table"
 			fi
-			rr_col_names=($(echo $rr_col_names_c | tr "[,]" "[ ]"))
+			rr_col_names=($(echo $rr_col_names_c | tr "," " "))
 			rr_q=$(echo "$1" | sed -e "s/VALUES/($rr_col_names_c) values/gi")
 			;;
 	esac
@@ -378,12 +378,12 @@ replace_rollback()
 		if [ "$rr_unique" != "" ]
 		then
 			rs=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_NAME = '$rr_unique' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
-			rr_ukeys=($(echo "$rs" | tr "[\n]" "[ ]"))
+			rr_ukeys=($(echo "$rs" | tr "\n" " "))
 		else
 			unset rr_ukeys
 		fi
 		rs=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE CONSTRAINT_NAME = 'PRIMARY' AND TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
-		rr_keys=($(echo "$rs" | tr "[\n]" "[ ]"))
+		rr_keys=($(echo "$rs" | tr "\n" " "))
 		if [ "$rr_keys" = "" -a "$rr_unique" = "" ]
 		then
 			echo "-- The table lacks an unique index. Rollback is not possible."
@@ -451,7 +451,7 @@ replace_rollback()
 	fi
 	IFS="
 "
-	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES(/(/ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" | tr "[,]" "[\t]")
+	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES(/(/ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" | tr "," "\t")
 	do
 		IFS="	"
 		rr_col_values=($rr_row)
@@ -500,7 +500,7 @@ get_pk()
 {
 	[ "$pk_cache" = "$db.$table" ] && return
 	rs=$(mysql_query "SHOW INDEX FROM $db.$table WHERE KEY_NAME = 'PRIMARY'" "$db")
-	pk=$(echo "$rs" | cut -f 5 | tr "[\n]" "[ ]" | sed -e "s/ $//g")
+	pk=$(echo "$rs" | cut -f 5 | tr "\n" " " | sed -e "s/ $//g")
 	pk_cache="$db.$table"
 }
 			
@@ -683,7 +683,7 @@ query_delete()
 	# this should be modified to look for leftmost parts of PK and index
 	for row in $(echo -e $wa)
 	do
-		fld=$(echo $row | cut -d"=" -f 1 | tr -d "[ ]")
+		fld=$(echo $row | cut -d"=" -f 1 | tr -d " ")
 		index_name $fld
 		index_parts $idxname
 		if [ "$prvidxname" != "$idxname" ]
@@ -814,7 +814,7 @@ query_update()
 		c=$(($c + 1))
 	done
 	cols=""
-	cs=($(echo $dml | tr "[,]" "[\t]" | tr -d "[ ]"))
+	cs=($(echo $dml | tr "," "\t" | tr -d " "))
 	saveIFS="$IFS"
 	IFS="	"
 	for arg in ${cs[@]}
@@ -878,7 +878,7 @@ query_update()
 			return
 		fi
 		c=$(($in + 1))
-		IFS="," in_set=($(echo "${wa[@]:$c}" | tr -d "[()]"))
+		IFS="," in_set=($(echo "${wa[@]:$c}" | tr -d "()"))
 		#
 		#	WHERE key IN (....)
 		#
@@ -890,7 +890,7 @@ query_update()
 			IFS=" "
 			rbs=$(rollback_args "$cols")
 			IFS="$saveIFS"
-			naked_arg=$(echo $arg | tr -d "[']")
+			naked_arg=$(echo $arg | tr -d "'")
 			if [ $pkwa -eq 1 ]
 			then
 				saveIFS="$IFS"
@@ -1049,7 +1049,7 @@ then
 	post=1
 	IFS="
 "
-	for row in $(tr "[&]" "[\n]")
+	for row in $(tr "&" "\n")
 	do
 		name=$(echo $row | cut -d"=" -f 1)
 		value=$(echo $row | cut -d"=" -f 2)
@@ -1101,7 +1101,7 @@ then
 				lq=""
 				for q in $(unescape_execute "$query")
 				do
-					[ "$(echo -n $q | tr -d '[ ]')" = "" ] && continue
+					[ "$(echo -n $q | tr -d ' ')" = "" ] && continue
 					if [ $(open_quotes "$q") -eq 1 ]
 					then
 						if [ $qo -eq 0 ]
