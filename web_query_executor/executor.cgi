@@ -3,8 +3,9 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.1.8"
+VERSION="1.2.1"
 BASE=/usr/local/executor
+MAX_QUERY_SIZE=9000
 #
 set -f
 post=0
@@ -68,6 +69,12 @@ mysql_debug()
 	echo "$1" >> /usr/local/executor/log/mysql_debug.log
 }
 
+add_debug()
+{
+	return
+	echo case $1: $(echo "$row" | tr -d "\n\r") >> /usr/local/executor/log/mysql_debug.log
+}
+
 connection_setup()
 {
 	coproc mysqlc { mysql -ANnfrvv -u "$user" -p"$password" -h "$host" "$default_db" 2>&1; } 
@@ -84,7 +91,7 @@ mysql_query()
 	skip=0
 	error=0
 	warning_text=""
-	qtype=$(echo ${thisquery,,} | cut -d" " -f 1)
+	qtype=$(echo ${thisquery,,} | tr -d "\r\n\t" | cut -d" " -f 1)
 	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$(cat $cached_db_tmpf 2>/dev/null)" ] 
 	then
 		echo "use $2;"  >&${mysqlc[1]}
@@ -93,7 +100,7 @@ mysql_query()
 	fi
 	echo "$thisquery;" >&${mysqlc[1]}
 	mysql_debug "mysql>$thisquery;"
-	while read -u ${mysqlc[0]} row
+	while read -t 15 -u ${mysqlc[0]} row
 	do
 		if [ "$row" = "--------------" ]
 		then
@@ -105,21 +112,23 @@ mysql_query()
 		fi
 		[ $skip -eq 1 ] && continue
 		[ "$row" = "" ] && continue
-		#echo "loop: $sw $thisquery  \"$row\"" >> /tmp/loop_debug.log
 		case $sw in
 			0)
 				case "$qtype" in
 					'use')
+							add_debug "use ($qtype)"
 							echo "$row"
 							mysql_debug "$row"
 							[[ $row == *"Database changed"* ]] && break
 							;;
 					'update')
+							add_debug "update ($qtype)"
 							echo "$row"
 							mysql_debug "$row"
 							[[ $row == *"Rows matched:"* ]] && break
 							;;
 					'select'|'show')
+							add_debug "select or show ($qtype)"
 							[[ $row == *"Empty set"* ]] && break
 							[[ $row == *"row"*"in set"* ]] && break
 							[[ $row == "ERROR "* ]] && break
@@ -127,6 +136,8 @@ mysql_query()
 							mysql_debug "$row"
 							;;
 					*)
+							add_debug "default ($qtype)"
+							[[ $row == "ERROR "* ]] && break
 							echo "$row"
 							mysql_debug "$row"
 							[[ $row == *"row"*"affected"* ]] && break
@@ -142,7 +153,6 @@ mysql_query()
 		esac
 		[[ $row == "ERROR "* ]] && break
 	done
-	#echo "loop: $sw $thisquery  **EXIT**" >> /tmp/loop_debug.log
 	if [[ $row == "ERROR "* ]]
 	then
 		mysql_debug "$row"
@@ -165,20 +175,16 @@ mysql_query()
 	fi
 }
 
-consistent_dump()
+delete_rollback ()
 {
-	mysql_query "SELECT * FROM $1.$2 WHERE $3 /* cdump */" > $dump_tmpf
-	if [ -s $dump_tmpf ]
-	then
-		nl=$(cat $dump_tmpf | wc -l)
-		nt=$(cat $dump_tmpf | tr -dc "\t" | wc -c)
-		if [ $((nt % nl)) -gt 0 ]
-		then
-			echo "-- WARNING: column count does not match for all rows in the rollback code below."
-			echo "-- WARNING: very likely you have one or more rows with columns containing tabs in it."
-		fi
-		cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/INSERT INTO $2 VALUES ('/g" -e "s/$/');/g" -e "s/'NULL'/NULL/g"
-	fi
+	case $4 in
+		0) insert="INSERT";;
+		1) insert="REPLACE";;
+	esac
+	tc=$(mysql_query "SELECT GROUP_CONCAT(column_name) FROM information_schema.columns  WHERE table_schema = '$1' AND table_name = '$2'")
+	rtc=$(echo $tc | sed -e "s/,/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@'),REPLACE(REPLACE(REPLACE(/g" -e "s/^/REPLACE(REPLACE(REPLACE(/g" -e "s/$/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@')/g")
+	mysql_query "SELECT $rtc FROM $1.$2 WHERE $3 /* delete_rollback */" > $dump_tmpf
+	[ -s $dump_tmpf ] && cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/$insert INTO $2 VALUES ('/g" -e "s/$/');/g" -e "s/'NULL'/NULL/g" -e "s/@xc_NL@/\\\n/g" -e "s/@xc_CR@/\\\r/g" -e "s/@xc_TAB@/\\\t/g"
 }
 
 show_form()
@@ -490,7 +496,7 @@ replace_rollback()
 			rr_idx=$((rr_idx + 1))
 		done
 		echo "DELETE FROM $table WHERE $rr_where;"
-		[ $replace -eq 1 ] && consistent_dump "$db" "$table" "$rr_where" 0
+		[ $replace -eq 1 ] && delete_rollback  "$db" "$table" "$rr_where" 0
 		IFS="
 "
 	done
@@ -712,14 +718,14 @@ query_delete()
 	then
 		parsed_db=$(echo $table | cut -d"." -f 1)	
 		parsed_table=$(echo $table | cut -d"." -f 2)	
-		consistent_dump "$parsed_db" "$parsed_table" "$where" 0 > $tmpf
+		delete_rollback  "$parsed_db" "$parsed_table" "$where" 0 > $tmpf
 		if [ -s $tmpf ] 
 		then
 			echo "USE $parsed_db" >> $rollback_file
 			cat $tmpf >> $rollback_file
 		fi
 	else
-		consistent_dump "$db" "$table" "$where" 0 > $tmpf
+		delete_rollback  "$db" "$table" "$where" 0 > $tmpf
 		if [ -s $tmpf ] 
 		then
 			echo "USE $db" >> $rollback_file
@@ -952,8 +958,7 @@ query_update()
 			then
 				# assumes small table, add a check
 				rollback=1
-				consistent_dump "$db" "$table" "$where" | gzip  > ${rollback_file}_${query_id}_dump.gz
-				echo "-- Run this script ${rollback_file}_${query_id}_dump.gz" >> $rollback_file
+				delete_rollback  "$db" "$table" "$where" 1 >> $rollback_file
 			else
 				rbs=$(rollback_args "$cols")
 				res=$(mysql_query "SELECT $rbs FROM $table WHERE $where /* update 9 */" "$db")
@@ -1011,6 +1016,14 @@ process_query() {
 	dq="${q[@]}"
 	dqq=$(pretty_print "$dq")
 	display "$dqq" 2
+	if [ ${#1} -gt $MAX_QUERY_SIZE ]
+	then
+		display "" 0
+		display "Statement too long, max $MAX_QUERY_SIZE chars allowed" 1
+		display "" 0
+		total_errors=$((total_errors+1))
+		return
+	fi
 	case "${q[0],,}" in
 		'update') 
 			query_update "$1" "$2"
