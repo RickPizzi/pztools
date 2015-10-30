@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.2.1"
+VERSION="1.2.2"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -12,6 +12,7 @@ post=0
 dryrun=0
 db=""
 kill_backq=0
+operc=0
 default_db=""
 closing_tags="</FONT></BODY></HTML>"
 total_warnings=0
@@ -185,6 +186,33 @@ delete_rollback ()
 	rtc=$(echo $tc | sed -e "s/,/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@'),REPLACE(REPLACE(REPLACE(/g" -e "s/^/REPLACE(REPLACE(REPLACE(/g" -e "s/$/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@')/g")
 	mysql_query "SELECT $rtc FROM $1.$2 WHERE $3 /* delete_rollback */" > $dump_tmpf
 	[ -s $dump_tmpf ] && cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/$insert INTO $2 VALUES ('/g" -e "s/$/');/g" -e "s/'NULL'/NULL/g" -e "s/@xc_NL@/\\\n/g" -e "s/@xc_CR@/\\\r/g" -e "s/@xc_TAB@/\\\t/g"
+}
+
+page_style()
+{
+	printf "<head>\n"
+	printf "<style>\n"
+	printf "body {\n"
+    	printf "\tbackground-color: linen;\n"
+    	printf "\tcolor: maroon;\n"
+	printf "\tfont-family: Arial, Helvetica, sans-serif;\n"
+	printf "} \n"
+	printf "\n.backspace { \n"
+	printf "\tmargin-left: -3ch;\n"
+	printf "\tfont-family: \"Lucida Console\", Monaco, monospace;\n"
+	printf " }\n"
+	printf "\n.bgbackspace { \n"
+	printf "\tmargin-left: -3ch;\n"
+	printf "\tfont-family: \"Lucida Console\", Monaco, monospace;\n"
+    	printf "\tcolor: linen;\n"
+	printf " }\n"
+	printf "\n.progress { \n"
+	printf "\tfont-family: \"Lucida Console\", Monaco, monospace;\n"
+	printf "\tfont-size: 18px;\n"
+	printf " }\n"
+	printf "</style>\n"
+	printf "<TITLE>Query Executor v%s</TITLE>\n" "$VERSION"
+	printf "</head>\n"
 }
 
 show_form()
@@ -1043,13 +1071,60 @@ process_query() {
 	display "" 0
 }
 
+total_query_count()
+{
+	total_queries=0
+	qo=0
+	lq=""
+	for q in $(unescape_execute "$query")
+	do
+		[ "$(echo -n $q | tr -d ' ')" = "" ] && continue
+		if [ $(open_quotes "$q") -eq 1 ]
+		then
+			if [ $qo -eq 0 ]
+			then
+				qo=1
+				lq="$lq$q;"
+				continue
+			else
+				qo=0
+				q="$lq$q"
+				lq=""
+			fi
+		else
+			if [ $qo -eq 1 ]
+			then
+				lq="$lq$q;"
+				continue
+			fi
+		fi
+		total_queries=$((total_queries + 1))
+	done
+}
+
+progress_bar()
+{
+	if [ $1 -eq 0 ]
+	then
+		printf "<FONT SIZE=2><span class=\"progress\">Progress:&nbsp:&nbsp;&nbsp;" 
+		return
+	fi
+	perc=$(($1 * 100 / total_queries))
+	[ $operc -gt 0 ] && printf "<span class=\"bgbackspace\">%02d%%</span>" $operc
+	printf "<span class=\"backspace\">%02d%%</span>" $perc
+	if [ $1 -eq $total_queries ]
+	then
+		printf "&nbsp;Done!<BR></span><BR>" $operc
+		return
+	fi
+	operc=$perc
+}
+
 printf "Content-Type: text/html; charset=utf-8\n\n"
 printf "<HTML>\n"
-printf "<HEAD>\n"
-printf "<TITLE>Query Executor v%s</TITLE>\n" "$VERSION"
-printf "</HEAD>\n"
+page_style
 printf "<BODY BGCOLOR=\"#ffffff\">\n"
-printf "<FONT FACE=\"Arial\" SIZE=3>\n"
+printf "<FONT SIZE=3>\n"
 case "$REQUEST_METHOD" in
 	'GET');;
 	'POST');;
@@ -1100,7 +1175,7 @@ then
 			else
 				connection_setup 
 				IFS=";"
-				qc=0
+				total_query_count
 				if [ "$ticket" != "" ]
 				then
 					rollback_file="$BASE/rollback/${user}_${host}_${ticket}_$$.sql"
@@ -1108,8 +1183,8 @@ then
 					rollback_file="$BASE/rollback/${user}_${host}_$(date "+%Y%m%d_%T")_$$.sql"
 				fi
 				echo "BEGIN;" > $rollback_file
-				# the following code also checks for presence of query delimiter inside quotes
-				# by keeping track of quotes open and not closed (qo = 1)
+				progress_bar 0
+				qc=0
 				qo=0
 				lq=""
 				for q in $(unescape_execute "$query")
@@ -1135,6 +1210,7 @@ then
 						fi
 					fi
 					qc=$(($qc + 1))
+					progress_bar $qc
 					process_query "$q" $qc
 				done
 				echo "COMMIT;" >> $rollback_file
