@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.2.2"
+VERSION="1.2.3"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -12,7 +12,6 @@ post=0
 dryrun=0
 db=""
 kill_backq=0
-operc=0
 default_db=""
 closing_tags="</FONT></BODY></HTML>"
 total_warnings=0
@@ -197,21 +196,36 @@ page_style()
     	printf "\tcolor: maroon;\n"
 	printf "\tfont-family: Arial, Helvetica, sans-serif;\n"
 	printf "} \n"
-	printf "\n.backspace { \n"
-	printf "\tmargin-left: -3ch;\n"
-	printf "\tfont-family: \"Lucida Console\", Monaco, monospace;\n"
-	printf " }\n"
-	printf "\n.bgbackspace { \n"
-	printf "\tmargin-left: -3ch;\n"
-	printf "\tfont-family: \"Lucida Console\", Monaco, monospace;\n"
+	printf "#barcontainer{\n"
+    	printf "\twidth:100%%;\n"
+    	printf "\theight:15px;\n"
+    	printf "\tborder:1px solid #000;\n"
+    	printf "\toverflow:hidden; \n"
+	printf "}\n"
+	printf "#progressbar{\n"
+    	printf "\twidth:37%%;\n"
+    	printf "\theight:15px;\n"
+    	printf "\tborder-right: 1px solid #000000;\n"
+    	printf "\tbackground: #d65946;\n"
+	printf "}\n"
+	printf "#percent {\n"
     	printf "\tcolor: linen;\n"
-	printf " }\n"
-	printf "\n.progress { \n"
-	printf "\tfont-family: \"Lucida Console\", Monaco, monospace;\n"
-	printf "\tfont-size: 18px;\n"
+    	printf "\tfont-size: 15px;\n"
+    	printf "\tfont-style: italic;\n"
+    	printf "\tfont-weight: bold;\n"
+    	printf "\tleft: 25px;\n"
+    	printf "\tposition: relative;\n"
+    	printf "\ttop: -16px;\n"
 	printf " }\n"
 	printf "</style>\n"
 	printf "<TITLE>Query Executor v%s</TITLE>\n" "$VERSION"
+	printf "<script type=\"text/javascript\">\n"
+	printf "function draw(max, pos){\n"
+    	printf "\tvar percent=Math.round((pos*100)/max);\n"
+    	printf "\tdocument.getElementById(\"progressbar\").style.width=percent+'%%';\n"
+    	printf "\tdocument.getElementById(\"percent\").innerHTML='Progress: ' + percent+'%%';\n"
+	printf "}\n"
+	printf "</script>\n"
 	printf "</head>\n"
 }
 
@@ -1102,22 +1116,22 @@ total_query_count()
 	done
 }
 
+progress_bar_init()
+{
+	printf "<div id=\"barcontainer\">\n"
+    	printf "\t<div id=\"progressbar\">\n"
+    	printf "\t</div>\n"
+    	printf "\t<div id=\"percent\">\n"
+    	printf "\t</div>\n"
+    	printf "</div>\n"
+}
+
 progress_bar()
 {
-	if [ $1 -eq 0 ]
-	then
-		printf "<FONT SIZE=2><span class=\"progress\">Progress:&nbsp:&nbsp;&nbsp;" 
-		return
-	fi
 	perc=$(($1 * 100 / total_queries))
-	[ $operc -gt 0 ] && printf "<span class=\"bgbackspace\">%02d%%</span>" $operc
-	printf "<span class=\"backspace\">%02d%%</span>" $perc
-	if [ $1 -eq $total_queries ]
-	then
-		printf "&nbsp;Done!<BR></span><BR>" $operc
-		return
-	fi
-	operc=$perc
+	printf "<script type=\"text/javascript\">\n"
+	printf "draw(100,%d);\n" $perc
+	printf "</script>\n"
 }
 
 printf "Content-Type: text/html; charset=utf-8\n\n"
@@ -1183,7 +1197,7 @@ then
 					rollback_file="$BASE/rollback/${user}_${host}_$(date "+%Y%m%d_%T")_$$.sql"
 				fi
 				echo "BEGIN;" > $rollback_file
-				progress_bar 0
+				progress_bar_init
 				qc=0
 				qo=0
 				lq=""
