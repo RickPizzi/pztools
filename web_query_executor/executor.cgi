@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.2.3"
+VERSION="1.2.6"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -181,7 +181,7 @@ delete_rollback ()
 		0) insert="INSERT";;
 		1) insert="REPLACE";;
 	esac
-	tc=$(mysql_query "SELECT GROUP_CONCAT(column_name) FROM information_schema.columns  WHERE table_schema = '$1' AND table_name = '$2'")
+	tc=$(mysql_query "SELECT GROUP_CONCAT('\`', column_name, '\`') FROM information_schema.columns  WHERE table_schema = '$1' AND table_name = '$2'")
 	rtc=$(echo $tc | sed -e "s/,/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@'),REPLACE(REPLACE(REPLACE(/g" -e "s/^/REPLACE(REPLACE(REPLACE(/g" -e "s/$/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@')/g")
 	mysql_query "SELECT $rtc FROM $1.$2 WHERE $3 /* delete_rollback */" > $dump_tmpf
 	[ -s $dump_tmpf ] && cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/$insert INTO $2 VALUES ('/g" -e "s/$/');/g" -e "s/'NULL'/NULL/g" -e "s/@xc_NL@/\\\n/g" -e "s/@xc_CR@/\\\r/g" -e "s/@xc_TAB@/\\\t/g"
@@ -196,8 +196,19 @@ page_style()
     	printf "\tcolor: maroon;\n"
 	printf "\tfont-family: Arial, Helvetica, sans-serif;\n"
 	printf "} \n"
+	printf "#overlay {\n"
+     	printf "\tvisibility: hidden;\n"
+     	printf "\tposition: absolute;\n"
+     	printf "\tleft: 0px;\n"
+     	printf "\ttop: 0px;\n"
+     	printf "\twidth:100%%;\n"
+     	printf "\theight:100%%;\n"
+     	printf "\tz-index: 1000;\n"
+	printf "}\n"
 	printf "#barcontainer{\n"
-    	printf "\twidth:100%%;\n"
+    	printf "\twidth:500px;\n"
+     	printf "\tmargin: 100px auto;\n"
+     	printf "\tbackground-color: #fff;\n"
     	printf "\theight:15px;\n"
     	printf "\tborder:1px solid #000;\n"
     	printf "\toverflow:hidden; \n"
@@ -209,7 +220,8 @@ page_style()
     	printf "\tbackground: #d65946;\n"
 	printf "}\n"
 	printf "#percent {\n"
-    	printf "\tcolor: linen;\n"
+    	printf "\tcolor: black;\n"
+    	printf "\ttext-align: center;\n"
     	printf "\tfont-size: 15px;\n"
     	printf "\tfont-style: italic;\n"
     	printf "\tfont-weight: bold;\n"
@@ -220,6 +232,10 @@ page_style()
 	printf "</style>\n"
 	printf "<TITLE>Query Executor v%s</TITLE>\n" "$VERSION"
 	printf "<script type=\"text/javascript\">\n"
+	printf "function overlay() {\n"
+	printf "\tel = document.getElementById(\"overlay\");\n"
+	printf "\tel.style.visibility = (el.style.visibility == \"visible\") ? \"hidden\" : \"visible\";\n"
+	printf "}\n"
 	printf "function draw(max, pos){\n"
     	printf "\tvar percent=Math.round((pos*100)/max);\n"
     	printf "\tdocument.getElementById(\"progressbar\").style.width=percent+'%%';\n"
@@ -481,21 +497,13 @@ replace_rollback()
 	# special case: autoinc pk and no unique index
 	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $auto_increment -eq 1 ]
 	then
-		case $dryrun in
-			0)
-				[ "$db" != "" ] && echo "USE $db" 
-				get_pk
-				echo "DELETE FROM $table WHERE $pk = '$last_id';"
-				return
-				;;
-			1)
-				if [ $dryrun -eq 1 -a $auto_increment -eq 1 ]
-				then
-					echo "-- auto_increment PK detected, rollback will be available after execution: ${1:0:60}..." 
-					return
-				fi
-				;;
+		[ "$db" != "" ] && echo "USE $db" 
+		get_pk
+		case $dryrun in 
+			0) echo "DELETE FROM $table WHERE $pk = '$last_id';";;
+			1) echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE';";;
 		esac
+		return
 	fi
 	IFS="
 "
@@ -1116,14 +1124,25 @@ total_query_count()
 	done
 }
 
+progress_bar_visibility_toggle()
+{
+	printf "<script type=\"text/javascript\">\n"
+	printf "overlay();\n" $perc
+	printf "</script>\n"
+}
+
 progress_bar_init()
 {
-	printf "<div id=\"barcontainer\">\n"
-    	printf "\t<div id=\"progressbar\">\n"
-    	printf "\t</div>\n"
-    	printf "\t<div id=\"percent\">\n"
+	printf "<div id=\"overlay\">\n"
+	printf "\t<div id=\"barcontainer\">\n"
+    	printf "\t\t<div id=\"progressbar\">\n"
+    	printf "\t\t</div>\n"
+    	printf "\t\t<div id=\"percent\">\n"
+    	printf "\t\t</div>\n"
     	printf "\t</div>\n"
     	printf "</div>\n"
+	progress_bar 0
+	progress_bar_visibility_toggle
 }
 
 progress_bar()
@@ -1132,6 +1151,11 @@ progress_bar()
 	printf "<script type=\"text/javascript\">\n"
 	printf "draw(100,%d);\n" $perc
 	printf "</script>\n"
+}
+
+progress_bar_dismiss()
+{
+	progress_bar_visibility_toggle
 }
 
 printf "Content-Type: text/html; charset=utf-8\n\n"
@@ -1227,6 +1251,7 @@ then
 					progress_bar $qc
 					process_query "$q" $qc
 				done
+				progress_bar_dismiss
 				echo "COMMIT;" >> $rollback_file
 			fi
 			if [ $dryrun -eq 1 ]
