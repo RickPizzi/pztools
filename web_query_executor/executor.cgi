@@ -71,6 +71,7 @@ mysql_debug()
 
 add_debug()
 {
+	return
 	echo case $1: $(echo "$row" | tr -d "\n\r") >> /usr/local/executor/log/mysql_debug.log
 }
 
