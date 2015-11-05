@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.2.6"
+VERSION="1.2.7"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -71,7 +71,6 @@ mysql_debug()
 
 add_debug()
 {
-	return
 	echo case $1: $(echo "$row" | tr -d "\n\r") >> /usr/local/executor/log/mysql_debug.log
 }
 
@@ -91,7 +90,8 @@ mysql_query()
 	skip=0
 	error=0
 	warning_text=""
-	qtype=$(echo ${thisquery,,} | tr -d "\r\n\t" | cut -d" " -f 1)
+	cq=$(echo ${thisquery,,} | iconv -c -f utf-8  | tr -d "\r\n\t")
+	qtype=$(echo "${cq/# /}" | cut -d" " -f 1)
 	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$(cat $cached_db_tmpf 2>/dev/null)" ] 
 	then
 		echo "use $2;"  >&${mysqlc[1]}
