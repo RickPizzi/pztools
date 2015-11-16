@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.2.7"
+VERSION="1.2.8"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -589,7 +589,7 @@ check_pk_use()
 	c=0
 	for arg in ${wa[@]}
 	do
-		warg=$(echo $arg | cut -d"=" -f 1)
+		warg=$(echo $arg | cut -d"=" -f 1 |  cut -d"." -f 2)
 		for parg in $pk
 		do
 			if [ "${parg,,}" = "${warg,,}" ]
