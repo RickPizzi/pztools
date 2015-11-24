@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.2.8"
+VERSION="1.2.9"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -230,6 +230,12 @@ page_style()
     	printf "\tposition: relative;\n"
     	printf "\ttop: -16px;\n"
 	printf " }\n"
+	printf ".c2cc {\n"
+    	printf "\tcolor: darkcyan;\n"
+    	printf "\tfont-size: 12px;\n"
+	printf "\tfont-family: Arial, Helvetica, sans-serif;\n"
+    	printf "\tfont-weight: bold;\n"
+	printf " }\n"
 	printf "</style>\n"
 	printf "<TITLE>Query Executor v%s</TITLE>\n" "$VERSION"
 	printf "<script type=\"text/javascript\">\n"
@@ -244,6 +250,14 @@ page_style()
 	printf "}\n"
 	printf "</script>\n"
 	printf "</head>\n"
+}
+
+clipboard_code()
+{
+	printf "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/clipboard.js/1.5.5/clipboard.min.js\"></script>\n"
+	printf "<script type=\"text/javascript\">\n"
+	printf "new Clipboard('.c2cc');\n"
+	printf "</script>\n"
 }
 
 show_form()
@@ -272,6 +286,7 @@ show_form()
 	printf "<TR><TD COLSPAN=2><INPUT TYPE=\"SUBMIT\" VALUE=\"Execute\">\n"
 	printf "</TABLE>\n"
 	printf "</FORM>\n"
+	clipboard_code
 }
 
 log()
@@ -1159,6 +1174,13 @@ progress_bar_dismiss()
 	progress_bar_visibility_toggle
 }
 
+copy_to_clipboard()
+{
+	display "</div>" 0
+	display "<a class=\"c2cc\" href=\"#c2c\" data-clipboard-target=\"#clip_area\">copy to clipboard</a>" 0
+	display "<a name=\"c2c\">" 0
+}
+
 printf "Content-Type: text/html; charset=utf-8\n\n"
 printf "<HTML>\n"
 page_style
@@ -1226,6 +1248,7 @@ then
 				qc=0
 				qo=0
 				lq=""
+				display "<div id=\"clip_area\">" 0
 				for q in $(unescape_execute "$query")
 				do
 					[ "$(echo -n $q | tr -d ' ')" = "" ] && continue
@@ -1257,6 +1280,7 @@ then
 			fi
 			if [ $dryrun -eq 1 ]
 			then
+				copy_to_clipboard
 				show_rollback $rollback_file
 				display "Dry run results:" 2
 				display "Errors: $total_errors  Warnings: $total_warnings<BR>" 2
@@ -1279,6 +1303,7 @@ then
 					else
 						mysql_query "COMMIT" > /dev/null
 						display "Done. Rollback statements saved in $rollback_file on $(hostname)." 0
+						copy_to_clipboard
 					fi
 				fi
 			fi
