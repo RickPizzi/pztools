@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.2.9"
+VERSION="1.3.1"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -22,7 +22,8 @@ errors_tmpf=/tmp/executor.err.$$
 output_tmpf=/tmp/executor.out.$$
 cached_db_tmpf=/tmp/executor.cdb.$$
 dump_tmpf=/tmp/executor.dmp.$$
-trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf' 0
+rows_tmpf=/tmp/executor.row.$$
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf' 0
 
 unescape_input()
 {
@@ -78,6 +79,7 @@ add_debug()
 connection_setup()
 {
 	coproc mysqlc { mysql -ANnfrvv -u "$user" -p"$password" -h "$host" "$default_db" 2>&1; } 
+	autoinc_inc=$(mysql_query "SELECT variable_value FROM Information_schema.global_variables WHERE variable_name = 'auto_increment_increment'")
 	mysql_query "BEGIN" > /dev/null
 	mysql_query "SET NAMES utf8" > /dev/null
 }
@@ -141,7 +143,11 @@ mysql_query()
 							[[ $row == "ERROR "* ]] && break
 							echo "$row"
 							mysql_debug "$row"
-							[[ $row == *"row"*"affected"* ]] && break
+							if [[ $row == *"row"*"affected"* ]]
+							then 
+								echo "$row" | cut -d " " -f 3 > $rows_tmpf
+								break
+							fi
 							;;
 				esac
 				;;
@@ -515,10 +521,17 @@ replace_rollback()
 	then
 		[ "$db" != "" ] && echo "USE $db" 
 		get_pk
-		case $dryrun in 
-			0) echo "DELETE FROM $table WHERE $pk = '$last_id';";;
-			1) echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE';";;
-		esac
+		rows_affected=$(cat $rows_tmpf)
+		for idx in $(seq -s "	" 1 1 $rows_affected)
+		do
+			case $dryrun in 
+				0) 	[ $idx -eq 1 ] && echo "DELETE FROM $table WHERE $pk = '$last_id';" || echo "DELETE FROM $table WHERE $pk = '$((last_id + (idx - 1) * autoinc_inc))';"
+					;;
+				1) 
+					[ $idx -eq 1 ] && echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE';" || echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE + $(((idx - 1) * autoinc_inc))';"
+					;;
+			esac
+		done
 		return
 	fi
 	IFS="
@@ -834,9 +847,9 @@ query_insert()
 			run_statement "$1" $dryrun
 			;;
 	esac
-	if [ $dryrun -eq 0 ]
+	if [ $dryrun -eq 0 -a $replace -eq 0 -a $auto_increment -eq 1 ] 
 	then
-		[ $replace -eq 0 -a $auto_increment -eq 1 ] && display "AUTO-INC value assigned:  $last_id" 3
+		[ $rows_affected -eq 1 ] && display "AUTO-INC value assigned:  $last_id" 3 || display "AUTO-INC values assigned:  $last_id to $((last_id + rows_affected * autoinc_inc - autoinc_inc))" 3
 	fi
 }
 
