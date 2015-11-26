@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.3.1"
+VERSION="1.3.2"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -79,7 +79,7 @@ add_debug()
 connection_setup()
 {
 	coproc mysqlc { mysql -ANnfrvv -u "$user" -p"$password" -h "$host" "$default_db" 2>&1; } 
-	autoinc_inc=$(mysql_query "SELECT variable_value FROM Information_schema.global_variables WHERE variable_name = 'auto_increment_increment'")
+	autoinc_inc=$(mysql_query "SELECT variable_value FROM information_schema.global_variables WHERE variable_name = 'auto_increment_increment'")
 	mysql_query "BEGIN" > /dev/null
 	mysql_query "SET NAMES utf8" > /dev/null
 }
@@ -88,13 +88,13 @@ mysql_query()
 {
 	sw=0
 	rm -f $errors_tmpf
-	thisquery="${1/# /}"
+ 	thisquery=$(echo "$1" | sed -e "s/^ *//g")
 	[ "${1,,}" == "show warnings" ] && sw=1
 	skip=0
 	error=0
 	warning_text=""
 	cq=$(echo ${thisquery,,} | iconv -c -f utf-8  | tr -d "\r\n\t")
-	qtype=$(echo "${cq/# /}" | cut -d" " -f 1)
+	qtype=$(echo $cq | cut -d" " -f 1)
 	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$(cat $cached_db_tmpf 2>/dev/null)" ] 
 	then
 		echo "use $2;"  >&${mysqlc[1]}
@@ -963,7 +963,7 @@ query_update()
 			return
 		fi
 		c=$(($in + 1))
-		IFS="," in_set=($(echo "${wa[@]:$c}" | tr -d "()"))
+		IFS="," in_set=($(echo "${wa[@]:$c}" | tr -d "()" | sed -e "s/^ *//g" -e "s/ *$//g"))
 		#
 		#	WHERE key IN (....)
 		#
