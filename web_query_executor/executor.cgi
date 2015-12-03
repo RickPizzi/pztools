@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.3.2"
+VERSION="1.3.3"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -521,7 +521,6 @@ replace_rollback()
 	then
 		[ "$db" != "" ] && echo "USE $db" 
 		get_pk
-		rows_affected=$(cat $rows_tmpf)
 		for idx in $(seq -s "	" 1 1 $rows_affected)
 		do
 			case $dryrun in 
@@ -839,6 +838,7 @@ query_insert()
 	case $replace in
 		0) 
 			run_statement "$1" $dryrun
+			rows_affected=$(cat $rows_tmpf)
 			[ $error -eq 0 ] && replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
 			;;
 		1)
