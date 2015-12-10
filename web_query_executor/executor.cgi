@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.3.3"
+VERSION="1.4.1"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -867,6 +867,15 @@ query_update()
 	fi
 	check_table_presence
 	[ $table_present -ne 1 ] && return
+	for arg in ${q[@]}
+	do
+		[ "${arg,,}" = "where" ] && break
+		if [ "${arg,,}" = "and" ] 
+		then
+			display "Syntax error near \"$arg\"" 1
+			return
+		fi
+	done
 	c=0
 	w=0
 	dml=""
@@ -1103,15 +1112,16 @@ process_query() {
 		total_errors=$((total_errors+1))
 		return
 	fi
+	qte=$(echo "$1" | sed -e "s/@last_insert_id/'$last_id'/I")
 	case "${q[0],,}" in
 		'update') 
-			query_update "$1" "$2"
+			query_update "$qte" "$2"
 			;;
 		'delete') 
-			query_delete "$1" "$2"
+			query_delete "$qte" "$2"
 			;;
 		'insert'|'replace') 
-			query_insert "$1" "$2" "${q[0]}"
+			query_insert "$qte" "$2" "${q[0]}"
 			;;
 		'select'|'show'|'create'|'drop'|'alter'|'truncate'|'grant'|'drop'|'revoke') 
 			display "Sorry, ${q[0]} not supported by this tool. This query will not be executed." 1
