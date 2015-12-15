@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.4.1"
+VERSION="1.5.2"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -23,7 +23,8 @@ output_tmpf=/tmp/executor.out.$$
 cached_db_tmpf=/tmp/executor.cdb.$$
 dump_tmpf=/tmp/executor.dmp.$$
 rows_tmpf=/tmp/executor.row.$$
-trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf' 0
+vars_tmpf=/tmp/executor.vars.$$
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf $vars_tmpf' 0
 
 unescape_input()
 {
@@ -443,7 +444,6 @@ num_rows()
 
 replace_rollback()
 {
-	saveIFS="$IFS"
 	case "$3" in
 		0) 	rr_col_names=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d ","))
 			rr_q="$1"
@@ -458,6 +458,7 @@ replace_rollback()
 			rr_q=$(echo "$1" | sed -e "s/VALUES/($rr_col_names_c) values/gi")
 			;;
 	esac
+	saveIFS="$IFS"
 	if [ "$rr_cache2" != "$db.$table" ]
 	then
 		rr_unique=$(mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_TYPE='UNIQUE' LIMIT 1")
@@ -501,11 +502,13 @@ replace_rollback()
 		if [ "$rr_unique" = "" ]
 		then
 			echo "-- $2 is not using primary key fully (cols needed $rr_nkeys, used $rr_nkeys_used). Rollback not possible"
+			IFS="$saveIFS"
 			return
 		else
 			if [ $rr_nukeys != $rr_nukeys_used ]
 			then
 				echo "-- $2 is not using unique index fully (cols needed $rr_nukeys, used $rr_nukeys_used). Rollback not possible"
+				IFS="$saveIFS"
 				return
 			fi
 		fi
@@ -520,7 +523,8 @@ replace_rollback()
 	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $auto_increment -eq 1 ]
 	then
 		[ "$db" != "" ] && echo "USE $db" 
-		get_pk
+		get_pk $db $table
+		IFS="	"
 		for idx in $(seq -s "	" 1 1 $rows_affected)
 		do
 			case $dryrun in 
@@ -531,6 +535,7 @@ replace_rollback()
 					;;
 			esac
 		done
+		IFS="$saveIFS"
 		return
 	fi
 	IFS="
@@ -578,14 +583,15 @@ replace_rollback()
 		IFS="
 "
 	done
+	IFS="$saveIFS"
 }
 
 get_pk()
 {
-	[ "$pk_cache" = "$db.$table" ] && return
-	rs=$(mysql_query "SHOW INDEX FROM $db.$table WHERE KEY_NAME = 'PRIMARY'" "$db")
+	[ "$pk_cache" = "$1.$2" ] && return
+	rs=$(mysql_query "SHOW INDEX FROM $1.$2 WHERE KEY_NAME = 'PRIMARY'" "$1")
 	pk=$(echo "$rs" | cut -f 5 | tr "\n" " " | sed -e "s/ $//g")
-	pk_cache="$db.$table"
+	pk_cache="$1.$2"
 }
 			
 check_autoincrement()
@@ -704,6 +710,210 @@ rollback_pkwhere()
 	echo ")"
 }
 
+index_in_use()
+{
+	saveIFS="$IFS"
+	IFS="
+"
+	if [ "$2" != "" ]
+	then
+		local odb=$db
+		db=$2
+	fi
+	if [ "$3" != "" ]
+	then
+		local otable=$table
+		table=$3
+	fi
+	wa=$(echo $1 | sed -e "s/ AND /\\\n/gI" -e "s/ in /=/gI")
+	using_index=0
+	prvidxname=""
+	multi=0
+	for row in $(echo -e $wa)
+	do
+		fld=$(echo $row | cut -d"=" -f 1 | tr -d " ")
+		index_name $fld
+		if [ "$prvidxname" != "$idxname" ]
+		then
+			if [ $multi -gt 0 ]
+			then
+				if [ $multi -eq $idxcount ]
+				then
+					using_index=1
+					break
+				fi
+			fi
+			if [ "$idxname" != "" ]
+			then
+				index_parts $idxname
+				if [ $idxcount -eq 1 ]
+				then
+					using_index=1
+					break
+				fi
+			fi
+			prvidxname="$idxname"
+			multi=0
+		fi
+		[ $idxcount -gt 1 ] && multi=$((multi+1))
+	done
+	[ $multi -gt 0 -a $multi -eq $idxcount ] &&  using_index=1
+
+	IFS="$saveIFS"
+	[ "$odb" != "" ] && db=$odb
+	[ "$otable" != "" ] && table=$otable
+}
+
+query_set()
+{
+	total_errors=$((total_errors+1))
+	n=$(echo "$1" | sed -e "s/=/ = /" -e "s/(/ (/")	
+	IFS=" " q=($n)
+	i=0
+	vval=""
+	for arg in ${q[@]}
+	do
+		case $i in
+			0) 
+				;;
+			1) 	if [[ $arg != "@"* ]]
+				then
+					display "syntax error near \"$arg\"" 1
+					return
+				fi
+				vname=$(echo $arg | cut -d"@" -f 2)
+				;;
+			2) 	if [ "$arg" != "=" ]
+				then
+					display "syntax error near \"$arg\"" 1
+					return
+				fi
+				;;
+			*)
+				vval="$vval$arg "
+				;;
+		esac
+		i=$((i+1))
+	done
+	if [ $(cat $vars_tmpf 2>/dev/null | cut -f 1  | fgrep -c $vname) -ne 0 ]
+	then
+		display "duplicate variable assignment" 1
+		return
+	fi
+	eok=0
+	if [[ "$vval" == "("* ]]
+	then
+		if [[ "${vval}" == *") " ]] 
+		then
+			eok=1
+		fi
+	fi
+	if [ $eok -eq 0 ]
+	then
+		display "variable expression must be enclosed within \"(\" and \")\"" 1
+		return
+	fi
+	vval=$(echo "$vval" | tr -d "()")
+	IFS=" " q=($vval)
+	if [ ${q[0],, } != "select" ]
+	then
+		display "only SELECT accepted as variable expression at this time" 1
+		return
+	fi
+	i=0
+	w=0
+	for arg in ${q[@]}
+	do
+		if [ "${arg,,}" = "from" ]
+		then
+			w=$((i+1))
+			break
+		fi
+		i=$((i + 1))
+	done
+	if [ $w -eq 0 ]
+	then
+		display "missing FROM clause in variable expression" 1
+		return
+	fi
+	vfrom=${q[$w]}
+	vdb=$(echo $vfrom | cut -d "." -f 1)
+	vtable=$(echo $vfrom | cut -d "." -f 2)
+	if [ "$vdb" = "$vtable" ]
+	then
+		display "table spec in variable expression must contain schema as well" 1
+		return
+	fi
+	i=0
+	w=0
+	for arg in ${q[@]}
+	do
+		if [ "${arg,,}" = "where" ]
+		then
+			w=$i
+			break
+		fi
+		i=$((i + 1))
+	done
+	if [ $w -eq 0 ]
+	then
+		display "missing WHERE condition in variable expression" 1
+		return
+	fi
+	vcond=""
+	i=0
+	for arg in ${q[@]}
+	do
+		if [ $i -gt $w ]
+		then
+			vcond="$vcond$arg "
+		fi
+		i=$((i + 1))
+	done
+	#get_pk $vdb $vtable
+        #pkc=$(echo $pk | wc -w)
+        #check_pk_use "$vcond" $pkc
+	index_in_use "$vcond" $vdb $vtable
+	#if [ $pk_in_use -eq 0 ]
+	if [ $using_index -eq 0 ]
+	then
+		display "variable expression not using an index" 1
+		return
+	fi
+	vcheck=""
+	i=0
+	for arg in ${q[@]}
+	do
+		case $i in
+			1) vcheck="${vcheck}count(*) ";;
+			*) vcheck="${vcheck}$arg ";;
+		esac
+		i=$((i+1))
+	done
+	vrows=$(mysql_query "$vcheck")
+	case "$vrows" in
+		'0')
+			display "expression returns no rows" 1
+			return
+			;;
+		'1')
+			;;
+		'')
+			
+			display "$(cat $errors_tmpf 2>/dev/null)" 1
+			return
+			;;
+		*)
+			display "expression returns more than one row" 1
+			return
+			;;
+	esac
+	vres=$(mysql_query "$vval")
+	display "Variable value assigned: @$vname = '$vres'" 3
+	echo -e "$vname\t$vres" >> $vars_tmpf
+	total_errors=$((total_errors-1))
+}
+
 query_delete()
 {
 	total_errors=$((total_errors+1))
@@ -758,30 +968,7 @@ query_delete()
 		display "OR condition in WHERE is not supported" 1
 		return
 	fi
-	IFS="
-"
-	wa=$(echo $where | sed -e "s/ AND /\\\n/gI" -e "s/ in /=/gI")
-	using_index=1
-	prvidxname=""
-	c=1
-	# this should be modified to look for leftmost parts of PK and index
-	for row in $(echo -e $wa)
-	do
-		fld=$(echo $row | cut -d"=" -f 1 | tr -d " ")
-		index_name $fld
-		index_parts $idxname
-		if [ "$prvidxname" != "$idxname" ]
-		then
-			if [ "$prvidxname" = "" ]
-			then
-				prvidxname="$idxname"
-			else
-				[ $c -le $idxcount ] && using_index=0
-				break	
-			fi
-		fi
-		c=$((c + 1))
-	done
+	index_in_use "$where"
 	if [ $using_index -eq 0 ]
 	then
 		num_rows
@@ -944,7 +1131,7 @@ query_update()
 	fi
 	rollback=0
 	wa=($(echo "$where" | sed -e "s/, /,/g"))
-	get_pk
+	get_pk $db $table
 	pkc=$(echo $pk | wc -w)
 	pkwa=0
 	check_pk_use "$where" $pkc
@@ -1113,6 +1300,19 @@ process_query() {
 		return
 	fi
 	qte=$(echo "$1" | sed -e "s/@last_insert_id/'$last_id'/I")
+	if [ "${q[0],,}" != "set" ]
+	then
+		saveIFS="$IFS"
+		IFS="
+"
+		for vr in $(cat $vars_tmpf 2>/dev/null)
+		do
+			vrn=$(echo "$vr" | cut -f 1)
+			vrv=$(echo "$vr" | cut -f 2)
+			qte=$(echo "$qte" | sed -e "s/@$vrn/'$vrv'/I")
+		done
+		IFS="$saveIFS"
+	fi
 	case "${q[0],,}" in
 		'update') 
 			query_update "$qte" "$2"
@@ -1125,6 +1325,9 @@ process_query() {
 			;;
 		'select'|'show'|'create'|'drop'|'alter'|'truncate'|'grant'|'drop'|'revoke') 
 			display "Sorry, ${q[0]} not supported by this tool. This query will not be executed." 1
+			;;
+		'set') 
+			query_set "$qte" "$2"
 			;;
 		*) display "Syntax error near \"${q[0]}\"" 1
 			;;
