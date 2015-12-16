@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.2"
+VERSION="1.5.3"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -604,14 +604,14 @@ check_autoincrement()
 index_name()
 {
 	[ "$in_cache" = "$db.$table.$1" ] && return
-	idxname=$(mysql_query "SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$1' AND REFERENCED_COLUMN_NAME IS NULL")
+	idxname=$(mysql_query "SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$1'")
 	in_cache="$db.$table.$1"
 }
 
 index_parts()
 {
 	[ "$ip_cache" = "$db.$table.$1" ] && return
-	idxcount=$(mysql_query "SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND CONSTRAINT_NAME = '$1'")
+	idxcount=$(mysql_query "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND INDEX_NAME = '$1'")
 	ip_cache="$db.$table.$1"
 }
 
@@ -726,39 +726,26 @@ index_in_use()
 		table=$3
 	fi
 	wa=$(echo $1 | sed -e "s/ AND /\\\n/gI" -e "s/ in /=/gI")
+	fc=0
 	using_index=0
-	prvidxname=""
-	multi=0
+	isw="IN ("
 	for row in $(echo -e $wa)
 	do
 		fld=$(echo $row | cut -d"=" -f 1 | tr -d " ")
-		index_name $fld
-		if [ "$prvidxname" != "$idxname" ]
-		then
-			if [ $multi -gt 0 ]
-			then
-				if [ $multi -eq $idxcount ]
-				then
-					using_index=1
-					break
-				fi
-			fi
-			if [ "$idxname" != "" ]
-			then
-				index_parts $idxname
-				if [ $idxcount -eq 1 ]
-				then
-					using_index=1
-					break
-				fi
-			fi
-			prvidxname="$idxname"
-			multi=0
-		fi
-		[ $idxcount -gt 1 ] && multi=$((multi+1))
+		isw="$isw'$fld',"
+		fc=$((fc+1))
 	done
-	[ $multi -gt 0 -a $multi -eq $idxcount ] &&  using_index=1
+	isw=$(echo $isw | sed -e "s/,$/)/")
 
+	for idxname in $(mysql_query "SELECT index_name FROM (SELECT index_name, COUNT(*) AS size FROM information_schema.statistics WHERE table_schema = '$db' AND table_name = '$table' GROUP BY index_name) d WHERE size  = $fc")
+	do
+		vc=$(mysql_query "SELECT COUNT(*) FROM information_schema.statistics  WHERE table_schema = '$db' AND table_name = '$table' AND COLUMN_NAME $isw AND INDEX_NAME = '$idxname'")
+		if [ $vc -eq $fc ]
+		then
+			using_index=1
+			break
+		fi
+	done
 	IFS="$saveIFS"
 	[ "$odb" != "" ] && db=$odb
 	[ "$otable" != "" ] && table=$otable
