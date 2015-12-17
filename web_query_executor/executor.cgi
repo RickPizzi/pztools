@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.3"
+VERSION="1.5.5"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 #
@@ -712,43 +712,47 @@ rollback_pkwhere()
 
 index_in_use()
 {
+	if [ "$2" = "" ] 
+	then
+		local ldb=$db
+		local ltable=$table
+	else
+		local ldb=$2
+		local ltable=$3
+	fi
+	wa=$(echo $1 | sed -e "s/ AND /\\\n/gI" -e "s/ in /=/gI")
+	hash="w="$(echo -e $wa | cut -d"=" -f 1 | tr -d " " | tr "\n" ",")"d="$ldb",t="$ltable
+	[ "$iiu_cache" = "$hash" ] && return
+	iiu_cache="$hash"
 	saveIFS="$IFS"
 	IFS="
 "
-	if [ "$2" != "" ]
-	then
-		local odb=$db
-		db=$2
-	fi
-	if [ "$3" != "" ]
-	then
-		local otable=$table
-		table=$3
-	fi
-	wa=$(echo $1 | sed -e "s/ AND /\\\n/gI" -e "s/ in /=/gI")
-	fc=0
 	using_index=0
-	isw="IN ("
-	for row in $(echo -e $wa)
+	for irow in $(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index), COUNT(*)  FROM information_schema.STATISTICS  WHERE table_schema =  '$ldb' AND table_name = '$ltable' GROUP BY index_name")
 	do
-		fld=$(echo $row | cut -d"=" -f 1 | tr -d " ")
-		isw="$isw'$fld',"
-		fc=$((fc+1))
-	done
-	isw=$(echo $isw | sed -e "s/,$/)/")
-
-	for idxname in $(mysql_query "SELECT index_name FROM (SELECT index_name, COUNT(*) AS size FROM information_schema.statistics WHERE table_schema = '$db' AND table_name = '$table' GROUP BY index_name) d WHERE size  = $fc")
-	do
-		vc=$(mysql_query "SELECT COUNT(*) FROM information_schema.statistics  WHERE table_schema = '$db' AND table_name = '$table' AND COLUMN_NAME $isw AND INDEX_NAME = '$idxname'")
-		if [ $vc -eq $fc ]
+		idx_cols=$(echo $irow | cut -f 1)
+		idx_parts=$(echo $irow | cut -f 2)
+		ic=0
+		for i in $(seq 1 1 $idx_parts)
+		do
+			idxcol=$(echo $idx_cols | cut -d"," -f $i)
+			for frow in $(echo -e $wa)
+			do
+				fld=$(echo $frow | cut -d"=" -f 1 | tr -d " ")
+				if [ "$fld" = "$idxcol" ]
+				then
+					ic=$((ic+1))
+					break
+				fi
+			done
+		done
+		if [ $ic -eq $idx_parts ]
 		then
 			using_index=1
 			break
 		fi
 	done
 	IFS="$saveIFS"
-	[ "$odb" != "" ] && db=$odb
-	[ "$otable" != "" ] && table=$otable
 }
 
 query_set()
