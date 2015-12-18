@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.6"
+VERSION="1.5.7"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 MIN_CARDINALITY=5
