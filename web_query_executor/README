@@ -22,8 +22,9 @@ EXAMPLE USAGE WITH VARIABLES:
 
 set @myvar1 =  (select val from rick.t1 where val=12121 and id = 1021);
 set @myvar2 =  (select val from rick.t1 where id = 1385);
+set @myvar3 =  (select 666);
 insert into t1 (val) values (@myvar1);
-insert into t1 (val) values (@last_insert_id), (@myvar2);
+insert into t1 (val) values (@last_insert_id), (@myvar2), (@myvar3);
 
 
 Feedbacks welcome!

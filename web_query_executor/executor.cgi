@@ -3,9 +3,10 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.5"
+VERSION="1.5.6"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
+MIN_CARDINALITY=5
 #
 set -f
 post=0
@@ -728,10 +729,11 @@ index_in_use()
 	IFS="
 "
 	using_index=0
-	for irow in $(mysql_query "SELECT GROUP_CONCAT(column_name ORDER BY seq_in_index), COUNT(*)  FROM information_schema.STATISTICS  WHERE table_schema =  '$ldb' AND table_name = '$ltable' GROUP BY index_name")
+	for irow in $(mysql_query "SELECT GROUP_CONCAT(s.column_name ORDER BY s.seq_in_index), COUNT(*),  ROUND(s.cardinality / t.table_rows * 100) AS card FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.index_name")
 	do
 		idx_cols=$(echo $irow | cut -f 1)
 		idx_parts=$(echo $irow | cut -f 2)
+		idx_card=$(echo $irow | cut -f 3)
 		ic=0
 		for i in $(seq 1 1 $idx_parts)
 		do
@@ -748,8 +750,13 @@ index_in_use()
 		done
 		if [ $ic -eq $idx_parts ]
 		then
-			using_index=1
-			break
+			if [ $idx_card -ge $MIN_CARDINALITY ]
+			then
+				using_index=1
+				break
+			else
+				display "WARNING: index ($idx_cols) would be covered, but has very low cardinality so it is ignored" 3
+			fi
 		fi
 	done
 	IFS="$saveIFS"
@@ -806,7 +813,7 @@ query_set()
 	fi
 	vval=$(echo "$vval" | tr -d "()")
 	IFS=" " q=($vval)
-	if [ ${q[0],, } != "select" ]
+	if [ ${q[0],,} != "select" ]
 	then
 		display "only SELECT accepted as variable expression at this time" 1
 		return
@@ -822,83 +829,77 @@ query_set()
 		fi
 		i=$((i + 1))
 	done
-	if [ $w -eq 0 ]
+	if [ $w -eq 1 ]
 	then
-		display "missing FROM clause in variable expression" 1
-		return
-	fi
-	vfrom=${q[$w]}
-	vdb=$(echo $vfrom | cut -d "." -f 1)
-	vtable=$(echo $vfrom | cut -d "." -f 2)
-	if [ "$vdb" = "$vtable" ]
-	then
-		display "table spec in variable expression must contain schema as well" 1
-		return
-	fi
-	i=0
-	w=0
-	for arg in ${q[@]}
-	do
-		if [ "${arg,,}" = "where" ]
+		vfrom=${q[$w]}
+		vdb=$(echo $vfrom | cut -d "." -f 1)
+		vtable=$(echo $vfrom | cut -d "." -f 2)
+		if [ "$vdb" = "$vtable" ]
 		then
-			w=$i
-			break
+			display "table spec in variable expression must contain schema as well" 1
+			return
 		fi
-		i=$((i + 1))
-	done
-	if [ $w -eq 0 ]
-	then
-		display "missing WHERE condition in variable expression" 1
-		return
-	fi
-	vcond=""
-	i=0
-	for arg in ${q[@]}
-	do
-		if [ $i -gt $w ]
+		i=0
+		w=0
+		for arg in ${q[@]}
+		do
+			if [ "${arg,,}" = "where" ]
+			then
+				w=$i
+				break
+			fi
+			i=$((i + 1))
+		done
+		if [ $w -eq 0 ]
 		then
-			vcond="$vcond$arg "
+			display "missing WHERE condition in variable expression" 1
+			return
 		fi
-		i=$((i + 1))
-	done
-	#get_pk $vdb $vtable
-        #pkc=$(echo $pk | wc -w)
-        #check_pk_use "$vcond" $pkc
-	index_in_use "$vcond" $vdb $vtable
-	#if [ $pk_in_use -eq 0 ]
-	if [ $using_index -eq 0 ]
-	then
-		display "variable expression not using an index" 1
-		return
-	fi
-	vcheck=""
-	i=0
-	for arg in ${q[@]}
-	do
-		case $i in
-			1) vcheck="${vcheck}count(*) ";;
-			*) vcheck="${vcheck}$arg ";;
+		vcond=""
+		i=0
+		for arg in ${q[@]}
+		do
+			if [ $i -gt $w ]
+			then
+				vcond="$vcond$arg "
+			fi
+			i=$((i + 1))
+		done
+		index_in_use "$vcond" $vdb $vtable
+		if [ $using_index -eq 0 ]
+		then
+			display "variable expression not using an index" 1
+			return
+		fi
+		vcheck=""
+		i=0
+		for arg in ${q[@]}
+		do
+			case $i in
+				1) vcheck="${vcheck}count(*) ";;
+				*) vcheck="${vcheck}$arg ";;
+			esac
+			i=$((i+1))
+		done
+		vrows=$(mysql_query "$vcheck")
+		case "$vrows" in
+			'0')
+				display "expression returns no rows" 1
+				return
+				;;
+			'1')
+				;;
+			'')
+				
+				display "$(cat $errors_tmpf 2>/dev/null)" 1
+				return
+				;;
+			*)
+				display "expression returns more than one row" 1
+				return
+				;;
 		esac
-		i=$((i+1))
-	done
-	vrows=$(mysql_query "$vcheck")
-	case "$vrows" in
-		'0')
-			display "expression returns no rows" 1
-			return
-			;;
-		'1')
-			;;
-		'')
-			
-			display "$(cat $errors_tmpf 2>/dev/null)" 1
-			return
-			;;
-		*)
-			display "expression returns more than one row" 1
-			return
-			;;
-	esac
+	fi
 	vres=$(mysql_query "$vval")
 	display "Variable value assigned: @$vname = '$vres'" 3
 	echo -e "$vname\t$vres" >> $vars_tmpf
@@ -1120,6 +1121,12 @@ query_update()
 			return
 		fi
 	fi
+	index_in_use "$where"
+	if [ $using_index -eq 0 ]
+	then
+		display "WHERE condition does not use any index " 1
+		return
+	fi
 	rollback=0
 	wa=($(echo "$where" | sed -e "s/, /,/g"))
 	get_pk $db $table
@@ -1129,11 +1136,6 @@ query_update()
 	if [ $pk_in_use -eq 0 ]
 	then
 		display "NOTICE: WHERE condition not using PK, switching to PK for safe rollback" 0
-		num_rows
-		if [ $rows -gt 1000000 -a $dryrun -eq 1 ]
-		then
-			display "WARNING: large table $table: $rows rows, and query not using PK. Rollback generation could take some time" 3
-		fi
 		pkwa=1
 	fi
 	in=$(array_idx "$where" "in")
