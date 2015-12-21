@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.7"
+VERSION="1.5.8"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 MIN_CARDINALITY=5
@@ -729,11 +729,12 @@ index_in_use()
 	IFS="
 "
 	using_index=0
-	for irow in $(mysql_query "SELECT GROUP_CONCAT(s.column_name ORDER BY s.seq_in_index), COUNT(*),  ROUND(s.cardinality / t.table_rows * 100) AS card FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.index_name")
+	for irow in $(mysql_query "SELECT GROUP_CONCAT(s.column_name ORDER BY s.seq_in_index), COUNT(*),  ROUND(s.cardinality / t.table_rows * 100) AS card, s.INDEX_NAME FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.index_name")
 	do
 		idx_cols=$(echo $irow | cut -f 1)
 		idx_parts=$(echo $irow | cut -f 2)
 		idx_card=$(echo $irow | cut -f 3)
+		idx_name=$(echo $irow | cut -f 4)
 		ic=0
 		for i in $(seq 1 1 $idx_parts)
 		do
@@ -750,7 +751,7 @@ index_in_use()
 		done
 		if [ $ic -eq $idx_parts ]
 		then
-			if [ $idx_card -ge $MIN_CARDINALITY ]
+			if [ "$idx_name" = "PRIMARY" -o $idx_card -ge $MIN_CARDINALITY ]
 			then
 				using_index=1
 				break
