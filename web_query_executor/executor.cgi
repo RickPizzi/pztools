@@ -3,10 +3,10 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.8"
+VERSION="1.5.13"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
-MIN_CARDINALITY=5
+MIN_REQ_CARDINALITY=5
 #
 set -f
 post=0
@@ -751,7 +751,7 @@ index_in_use()
 		done
 		if [ $ic -eq $idx_parts ]
 		then
-			if [ "$idx_name" = "PRIMARY" -o $idx_card -ge $MIN_CARDINALITY ]
+			if [ "$idx_name" = "PRIMARY" -o $idx_card -ge $MIN_REQ_CARDINALITY ]
 			then
 				using_index=1
 				break
@@ -759,6 +759,21 @@ index_in_use()
 				display "WARNING: index ($idx_cols) would be covered, but has very low cardinality so it is ignored" 3
 			fi
 		fi
+	done
+	IFS="$saveIFS"
+}
+
+insert_vars()
+{
+	qte=$(echo "$1" | sed -e "s/@last_insert_id/'$last_id'/Ig")
+	saveIFS="$IFS"
+	IFS="
+"
+	for vr in $(cat $vars_tmpf 2>/dev/null)
+	do
+		vrn=$(echo "$vr" | cut -f 1)
+		vrv=$(echo "$vr" | cut -f 2)
+		qte=$(echo "$qte" | sed -e "s/@$vrn/'$vrv'/Ig")
 	done
 	IFS="$saveIFS"
 }
@@ -830,7 +845,7 @@ query_set()
 		fi
 		i=$((i + 1))
 	done
-	if [ $w -eq 1 ]
+	if [ $w -ge 1 ]
 	then
 		vfrom=${q[$w]}
 		vdb=$(echo $vfrom | cut -d "." -f 1)
@@ -882,7 +897,8 @@ query_set()
 			esac
 			i=$((i+1))
 		done
-		vrows=$(mysql_query "$vcheck")
+		insert_vars "$vcheck"
+		vrows=$(mysql_query "$qte")
 		case "$vrows" in
 			'0')
 				display "expression returns no rows" 1
@@ -901,7 +917,8 @@ query_set()
 				;;
 		esac
 	fi
-	vres=$(mysql_query "$vval")
+	insert_vars "$vval"
+	vres=$(mysql_query "$qte")
 	display "Variable value assigned: @$vname = '$vres'" 3
 	echo -e "$vname\t$vres" >> $vars_tmpf
 	total_errors=$((total_errors-1))
@@ -1033,6 +1050,34 @@ query_insert()
 	fi
 }
 
+get_columns()
+{
+	saveIFS="$IFS"
+	IFS="
+"
+	cols=""
+	q=0
+	lfp=1
+	for idx in $(seq 1 1 ${#1})
+	do
+		case "${1:$idx:1}" in
+			"'") 	if [ "${1:$((idx-1)):1}" != "\\" ]
+				then
+					[ $q -eq 0 ] && q=1 || q=0
+				fi
+				;;
+			'=') 	if [ $q -eq 0 ]
+				then
+					cols="$cols$(echo ${1:$lfp:$((idx-lfp))} | cut -d',' -f 2 | tr -d ' ') "
+					lfp=$((idx+1))
+				fi
+				;;
+			*) 	;;
+		esac
+	done
+	IFS="$saveIFS"
+}
+
 query_update()
 {
 	total_errors=$((total_errors+1))
@@ -1087,17 +1132,7 @@ query_update()
 		fi
 		c=$(($c + 1))
 	done
-	cols=""
-	cs=($(echo $dml | tr "," "\t" | tr -d " "))
-	saveIFS="$IFS"
-	IFS="	"
-	for arg in ${cs[@]}
-	do
-		# TODO: need to find a way to detect whether the equal sign is inside a string or not...
-		[ $(echo $arg | fgrep -v '=\"' | fgrep -c "=") -eq 1 ] && cols="$cols$(echo $arg | cut -d"=" -f 1) "
-	done
-	IFS="$saveIFS"
-	#display "Cols: $cols" 0
+	get_columns "$dml"
 	check_columns "$cols"
 	[ $columns_ok -eq 0 ] && return
 	display "Schema: $db" 0
@@ -1293,19 +1328,11 @@ process_query() {
 		total_errors=$((total_errors+1))
 		return
 	fi
-	qte=$(echo "$1" | sed -e "s/@last_insert_id/'$last_id'/I")
 	if [ "${q[0],,}" != "set" ]
 	then
-		saveIFS="$IFS"
-		IFS="
-"
-		for vr in $(cat $vars_tmpf 2>/dev/null)
-		do
-			vrn=$(echo "$vr" | cut -f 1)
-			vrv=$(echo "$vr" | cut -f 2)
-			qte=$(echo "$qte" | sed -e "s/@$vrn/'$vrv'/I")
-		done
-		IFS="$saveIFS"
+		insert_vars "$1"
+	else
+		qte="$1"
 	fi
 	case "${q[0],,}" in
 		'update') 
