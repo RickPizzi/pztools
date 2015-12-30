@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.13"
+VERSION="1.5.19"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -62,7 +62,7 @@ display() {
 }
 
 debug() {
-	d_text=$(echo "$1" | od -va)
+	d_text=$(echo "$1" | od -vc)
 	echo ="<BR>DEBUG:<BR>$d_text<BR>"  >> $output_tmpf;
 	echo "$1" >> /usr/local/executor/log/debug.log
 }
@@ -729,34 +729,40 @@ index_in_use()
 	IFS="
 "
 	using_index=0
-	for irow in $(mysql_query "SELECT GROUP_CONCAT(s.column_name ORDER BY s.seq_in_index), COUNT(*),  ROUND(s.cardinality / t.table_rows * 100) AS card, s.INDEX_NAME FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.index_name")
+	for irow in $(mysql_query "SELECT GROUP_CONCAT(s.column_name ORDER BY s.seq_in_index), COUNT(*),  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.index_name")
 	do
 		idx_cols=$(echo $irow | cut -f 1)
 		idx_parts=$(echo $irow | cut -f 2)
 		idx_card=$(echo $irow | cut -f 3)
 		idx_name=$(echo $irow | cut -f 4)
 		ic=0
+		oseq=0
+		pm=1
 		for i in $(seq 1 1 $idx_parts)
 		do
 			idxcol=$(echo $idx_cols | cut -d"," -f $i)
+			[ $idx_parts -gt 1 ] && seq=$(mysql_query "SELECT seq_in_index FROM information_schema.statistics WHERE table_schema = '$ldb' AND table_name = '$ltable' AND index_name = '$idx_name' AND column_name = '$idxcol'") || seq=1
 			for frow in $(echo -e $wa)
 			do
-				fld=$(echo $frow | cut -d"=" -f 1 | tr -d " ")
-				if [ "$fld" = "$idxcol" ]
+				fld=$(echo $frow | cut -d"=" -f 1 | tr -dc "A-Za-z0-9_")
+				if [ "${fld,,}" = "${idxcol,,}" ]
 				then
 					ic=$((ic+1))
+					[ $((seq-oseq)) -gt 1 ] && pm=0
+					oseq=$seq
 					break
 				fi
 			done
 		done
-		if [ $ic -eq $idx_parts ]
+		[ $ic -eq 0 ] && pm=0
+		if [ $ic -eq $idx_parts -o $pm -eq 1 ]
 		then
 			if [ "$idx_name" = "PRIMARY" -o $idx_card -ge $MIN_REQ_CARDINALITY ]
 			then
 				using_index=1
 				break
-			else
-				display "WARNING: index ($idx_cols) would be covered, but has very low cardinality so it is ignored" 3
+			#else
+				#display "WARNING: index ($idx_cols) has very low cardinality, skipping" 3
 			fi
 		fi
 	done
@@ -973,6 +979,16 @@ query_delete()
 	display "Table: $table" 0
 	whd=$(pretty_print "$where")
 	display "WHERE condition: \"$whd\"" 0
+	if [ $(array_idx "$where" "&&") -ge 0 ]
+	then
+		display "'&&' operator is not supported, please use 'AND'" 1
+		return
+	fi
+	if [ $(array_idx "$where" "||") -ge 0 ]
+	then
+		display "'||' operator is not supported, please use 'OR'" 1
+		return
+	fi
 	if [ $(array_idx "$where" "or") -ge 0 ]
 	then
 		display "OR condition in WHERE is not supported" 1
@@ -1092,10 +1108,16 @@ query_update()
 	fi
 	check_table_presence
 	[ $table_present -ne 1 ] && return
+	qon=0
 	for arg in ${q[@]}
 	do
 		[ "${arg,,}" = "where" ] && break
-		if [ "${arg,,}" = "and" ] 
+		qcnt=$(echo $arg | tr -dc "'" | wc -c)
+		if [ $((qcnt%2)) -eq 1 ]
+		then
+			[ $qon -eq 0 ] && qon=1 || qon=0
+		fi
+		if [ $qon -eq 0 -a "${arg,,}" = "and" ] 
 		then
 			display "Syntax error near \"$arg\"" 1
 			return
@@ -1138,9 +1160,20 @@ query_update()
 	display "Schema: $db" 0
 	display "Table: $table" 0
 	d_text=$(escape_html "$dml")
-	display "Set: $d_text" 0
+	whd=$(pretty_print "$d_text")
+	display "Set: $whd" 0
 	whd=$(pretty_print "$where")
 	display "WHERE condition: \"$whd\"" 0
+	if [ $(array_idx "$where" "&&") -ge 0 ]
+	then
+		display "'&&' operator is not supported, please use 'AND'" 1
+		return
+	fi
+	if [ $(array_idx "$where" "||") -ge 0 ]
+	then
+		display "'||' operator is not supported, please use 'OR'" 1
+		return
+	fi
 	if [ $(array_idx "$where" "or") -ge 0 ]
 	then
 		display "OR condition in WHERE is not supported" 1
@@ -1293,7 +1326,7 @@ pretty_print()
 	c=1
 	for arg in $1
 	do
-		if [ $c -eq 10 ]
+		if [ $c -eq 16 ]
 		then
 			echo -n "$arg<br>"	
 			c=1
