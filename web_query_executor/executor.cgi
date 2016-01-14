@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.19"
+VERSION="1.5.20"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -13,6 +13,8 @@ post=0
 dryrun=0
 db=""
 kill_backq=0
+ninja=0
+enable_ninja=0
 default_db=""
 closing_tags="</FONT></BODY></HTML>"
 total_warnings=0
@@ -291,6 +293,8 @@ show_form()
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
 	[ $dryrun -eq 1 ] && checkbox="CHECKED"
 	printf "<TR><TD>Dry Run:</TD><TD ALIGN=LEFT><INPUT TYPE=CHECKBOX NAME=\"dryrun\" VALUE=\"on\" %s></TD></TR>\n" "$checkbox"
+	[ $enable_ninja -eq 1 ] && printf "<TR><TD>Enable <I>Ninja Mode</I> (BE CAREFUL!! Make sure you know what you are doing before enabling this!)</TD><TD ALIGN=LEFT><INPUT TYPE=CHECKBOX NAME=\"ninja\" VALUE=\"on\"></TD></TR>\n" 
+	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
 	printf "<TR><TD COLSPAN=2><INPUT TYPE=\"SUBMIT\" VALUE=\"Execute\">\n"
 	printf "</TABLE>\n"
 	printf "</FORM>\n"
@@ -761,8 +765,16 @@ index_in_use()
 			then
 				using_index=1
 				break
-			#else
-				#display "WARNING: index ($idx_cols) has very low cardinality, skipping" 3
+			else
+				if [ $ninja -eq 0 ]
+				then
+					display "NOTICE: index ($idx_cols) has very low cardinality, and will be skipped. Enable <I>ninja mode</I> to use it regardless." 3
+					enable_ninja=1
+				else
+					display "WARNING: index ($idx_cols) has very low cardinality. Considering it due to <I>ninja mode</I> being enabled. Good luck." 3
+					using_index=1
+					break
+				fi
 			fi
 		fi
 	done
@@ -1193,7 +1205,7 @@ query_update()
 	index_in_use "$where"
 	if [ $using_index -eq 0 ]
 	then
-		display "WHERE condition does not use any index " 1
+		display "we couldn't find any usable index to satisfy WHERE condition" 1
 		return
 	fi
 	rollback=0
@@ -1494,6 +1506,9 @@ then
 				;;
 			'backq') kill_backq=0
 				[ "$value" = "on" ] && kill_backq=1
+				;;
+			'ninja') 
+				[ "$value" = "on" ] && ninja=1
 				;;
 		esac
 	done
