@@ -3,20 +3,25 @@
 #
 #	takes a sample of SHOW ENGINE INNODB STATUS every 10 seconds and stores it in files
 #	under $SAMPLEDIR for later use
-#	(run it in background with nohup)
-#	v2.0 	use coprocess and permanent connection to server
-#	riccardo.pizzi@rumbo.com
+#	(run it in background with nohup; user should have password in dot file)
+#	get_reply routine only needed to drain the mysql output pipe otherwise script will block when it fills up
+#	rpizzi@blackbirdit.com
 #
 SAMPLEDIR=$HOME/sampling/data/$(hostname)
-SAMPLEFILE=/tmp/sampler.sample
+USER=photographer
 #
-echo -n "Password: "
-stty -echo
-read pass
-stty echo
-echo
-coproc mysqlc { script -c "mysql -ANrs -p$pass 2>/dev/null" /dev/null; }
+get_reply()
+{
+ 	while read -t 0.2 -u ${mysqlc[0]} row
+        do
+		echo "$row" >/dev/null
+	done
+}
+
+coproc mysqlc { script -c "mysql -ANrs -u$USER 2>&1" /dev/null; }
 c=0
+echo "set session interactive_timeout=30;" >&${mysqlc[1]}
+echo "set session wait_timeout=30;" >&${mysqlc[1]}
 while true
 do
 	month=$(date +%m)
@@ -26,6 +31,6 @@ do
 	[ ! -d $folder ] && mkdir -p $folder
 	echo "pager cat >> $folder/$hour.sample" >&${mysqlc[1]}
 	echo "show engine innodb status;" >&${mysqlc[1]}
+	get_reply
 	sleep 10
 done
-
