@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.20"
+VERSION="1.5.22"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -759,6 +759,7 @@ index_in_use()
 			done
 		done
 		[ $ic -eq 0 ] && pm=0
+		#display "DEBUG: $idx_cols $idx_parts $idx_name $pm" 0
 		if [ $ic -eq $idx_parts -o $pm -eq 1 ]
 		then
 			if [ "$idx_name" = "PRIMARY" -o $idx_card -ge $MIN_REQ_CARDINALITY ]
@@ -768,7 +769,6 @@ index_in_use()
 			else
 				if [ $ninja -eq 0 ]
 				then
-					display "NOTICE: index ($idx_cols) has very low cardinality, and will be skipped. Enable <I>ninja mode</I> to use it regardless." 3
 					enable_ninja=1
 				else
 					display "WARNING: index ($idx_cols) has very low cardinality. Considering it due to <I>ninja mode</I> being enabled. Good luck." 3
@@ -778,6 +778,12 @@ index_in_use()
 			fi
 		fi
 	done
+	if [ $using_index -eq 0 ]
+	then
+		[ $enable_ninja eq 1 ] && display "NOTICE: index ($idx_cols) has very low cardinality, and will be skipped. Enable <I>ninja mode</I> to use it regardless." 3
+	else
+		enable_ninja=0
+	fi
 	IFS="$saveIFS"
 }
 
@@ -1233,7 +1239,7 @@ query_update()
 			return
 		fi
 		c=$(($in + 1))
-		IFS="," in_set=($(echo "${wa[@]:$c}" | tr -d "()" | sed -e "s/^ *//g" -e "s/ *$//g"))
+		IFS="," in_set=($(echo "${wa[@]:$c}" | tr -d "() " | sed -e "s/^ *//g" -e "s/ *$//g"))
 		#
 		#	WHERE key IN (....)
 		#
