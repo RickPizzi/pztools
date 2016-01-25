@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.22"
+VERSION="1.5.23"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -770,6 +770,7 @@ index_in_use()
 				if [ $ninja -eq 0 ]
 				then
 					enable_ninja=1
+					ninjaidx=$idx_cols
 				else
 					display "WARNING: index ($idx_cols) has very low cardinality. Considering it due to <I>ninja mode</I> being enabled. Good luck." 3
 					using_index=1
@@ -780,7 +781,7 @@ index_in_use()
 	done
 	if [ $using_index -eq 0 ]
 	then
-		[ $enable_ninja eq 1 ] && display "NOTICE: index ($idx_cols) has very low cardinality, and will be skipped. Enable <I>ninja mode</I> to use it regardless." 3
+		[ $enable_ninja -eq 1 ] && display "NOTICE: index ($ninjaidx) has very low cardinality, and will be skipped. Enable <I>ninja mode</I> to use it regardless." 3
 	else
 		enable_ninja=0
 	fi
