@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.23"
+VERSION="1.5.25"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -27,7 +27,8 @@ cached_db_tmpf=/tmp/executor.cdb.$$
 dump_tmpf=/tmp/executor.dmp.$$
 rows_tmpf=/tmp/executor.row.$$
 vars_tmpf=/tmp/executor.vars.$$
-trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf $vars_tmpf' 0
+cmlog_tmpf=/tmp/executor.cmlog.$$
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf $vars_tmpf $cmlog_tmpf' 0
 
 unescape_input()
 {
@@ -85,6 +86,7 @@ connection_setup()
 	coproc mysqlc { mysql -ANnfrvv -u "$user" -p"$password" -h "$host" "$default_db" 2>&1; } 
 	autoinc_inc=$(mysql_query "SELECT variable_value FROM information_schema.global_variables WHERE variable_name = 'auto_increment_increment'")
 	mysql_query "BEGIN" > /dev/null
+	start_time=$(mysql_query "SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%d-%m-%Y %H:%i:%S')")
 	mysql_query "SET NAMES utf8" > /dev/null
 }
 
@@ -820,6 +822,11 @@ query_set()
 					display "syntax error near \"$arg\"" 1
 					return
 				fi
+				if [[ $arg = *":"* ]]
+				then
+					display "syntax error near \"$arg\"" 1
+					return
+				fi
 				vname=$(echo $arg | cut -d"@" -f 2)
 				;;
 			2) 	if [ "$arg" != "=" ]
@@ -828,7 +835,11 @@ query_set()
 					return
 				fi
 				;;
-			*)
+			*)	if [[ ${arg,,} = *"last_insert_id()"* ]]
+				then
+					display "not supported, use automatic variable @last_insert_id instead" 1
+					return
+				fi
 				vval="$vval$arg "
 				;;
 		esac
@@ -1364,6 +1375,12 @@ open_quotes()
 	printf "%d %% 2\n" ${#nniq} | bc
 }
 
+cm_log_q()
+{
+	[ $dryrun -eq 1 ] && return
+	echo "$1" >> $cmlog_tmpf
+}
+
 process_query() {
 	q_nb=$(echo "$1" | sed -e "s/^ *//")
 	IFS=" " q=($q_nb)
@@ -1389,12 +1406,15 @@ process_query() {
 	case "${q[0],,}" in
 		'update') 
 			query_update "$qte" "$2"
+			cm_log_q "$qte"
 			;;
 		'delete') 
 			query_delete "$qte" "$2"
+			cm_log_q "$qte"
 			;;
 		'insert'|'replace') 
 			query_insert "$qte" "$2" "${q[0]}"
+			cm_log_q "$qte"
 			;;
 		'select'|'show'|'create'|'drop'|'alter'|'truncate'|'grant'|'drop'|'revoke') 
 			display "Sorry, ${q[0]} not supported by this tool. This query will not be executed." 1
@@ -1478,6 +1498,11 @@ copy_to_clipboard()
 	display "</div>" 0
 	display "<a class=\"c2cc\" href=\"#c2c\" data-clipboard-target=\"#clip_area\">copy to clipboard</a>" 0
 	display "<a name=\"c2c\">" 0
+}
+
+cm_integration()
+{
+	/usr/local/executor/sbin/servicenow_integration.sh "$ticket" "$user" "$host" "$db" "$start_time" "$end_time" $cmlog_tmpf
 }
 
 printf "Content-Type: text/html; charset=utf-8\n\n"
@@ -1604,8 +1629,10 @@ then
 						display "Execution failed!  Your changes have been rolled back.  Errors: $total_errors  Warnings: $total_warnings" 1
 					else
 						mysql_query "COMMIT" > /dev/null
+						end_time=$(mysql_query "SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%d-%m-%Y %H:%i:%S')")
 						display "Done. Rollback statements saved in $rollback_file on $(hostname)." 0
 						copy_to_clipboard
+						cm_integration
 					fi
 				fi
 			fi
