@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.25"
+VERSION="1.5.27"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -357,6 +357,16 @@ post_checks()
 		display "This instance is READ ONLY" 1
 		post_error=1
 		return
+	fi
+	if [ "$ticket" = "" ]
+	then
+		display "Ticket ID cannot be empty" 1
+		post_error=1
+	fi
+	if [ "$(echo $ticket | tr -d  "[:alnum:]-_")" != "" ]
+	then
+		display "Ticket ID can only contain numbers, letters and the dash character" 1
+		post_error=1
 	fi
 	if [ "$default_db" != "" ]
 	then
@@ -1071,6 +1081,10 @@ query_insert()
 	fi
 	table="${q[2]}"
 	[ "${q[3],,}" = "values" ] && nocols=1 || nocols=0
+	if [[ " ${q[@],,} " =~ " select " ]]; then
+		display "${3^^}... SELECT not supported by this tool" 1
+		return
+	fi
 	echo $table | fgrep -q "(" && table=$(echo $table | cut -d "(" -f 1)
 	check_table_presence
 	[ $table_present -ne 1 ] && return
