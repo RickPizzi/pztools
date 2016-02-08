@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.27"
+VERSION="1.5.29"
 BASE=/usr/local/executor
 MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -810,7 +810,7 @@ insert_vars()
 	do
 		vrn=$(echo "$vr" | cut -f 1)
 		vrv=$(echo "$vr" | cut -f 2)
-		qte=$(echo "$qte" | sed -e "s/@$vrn/'$vrv'/Ig")
+		qte=$(echo "$qte" | sed -e "s/@$vrn\([,) ]\)/'$vrv'\1/Ig")
 	done
 	IFS="$saveIFS"
 }
@@ -1128,7 +1128,8 @@ get_columns()
 				;;
 			'=') 	if [ $q -eq 0 ]
 				then
-					cols="$cols$(echo ${1:$lfp:$((idx-lfp))} | cut -d',' -f 2 | tr -d ' ') "
+					col2add=$(echo ${1:$lfp:$((idx-lfp))})
+					cols="$cols${col2add##*,}"
 					lfp=$((idx+1))
 				fi
 				;;
