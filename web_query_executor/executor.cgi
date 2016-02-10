@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.6.4"
+VERSION="1.6.5"
 BASE=/usr/local/executor
 #MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -841,7 +841,7 @@ insert_vars()
 	do
 		vrn=$(echo "$vr" | cut -f 1)
 		vrv=$(echo "$vr" | cut -f 2)
-		qte=$(echo "$qte" | sed -e "s/@$vrn\([,) ]\)/'$vrv'\1/Ig")
+		qte=$(echo "$qte" | sed -e "s/@$vrn\([,) ]*\)/'$vrv'\1/Ig") 
 	done
 	IFS="$saveIFS"
 }
