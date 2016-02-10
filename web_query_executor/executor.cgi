@@ -3,9 +3,9 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.5.29"
+VERSION="1.6.4"
 BASE=/usr/local/executor
-MAX_QUERY_SIZE=9000
+#MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
 #
 set -f
@@ -83,7 +83,7 @@ add_debug()
 
 connection_setup()
 {
-	coproc mysqlc { mysql -ANnfrvv -u "$user" -p"$password" -h "$host" "$default_db" 2>&1; } 
+	coproc mysqlc { stdbuf -oL mysql -ANnfrvv -u "$user" -p"$password" -h "$host" "$default_db" 2>&1; } 
 	autoinc_inc=$(mysql_query "SELECT variable_value FROM information_schema.global_variables WHERE variable_name = 'auto_increment_increment'")
 	mysql_query "BEGIN" > /dev/null
 	start_time=$(mysql_query "SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%d-%m-%Y %H:%i:%S')")
@@ -459,6 +459,22 @@ num_rows()
 	nr_cache="$db.$table"
 }
 
+autoinc_rollback()
+{
+	[ "$db" != "" ] && echo "USE $db" 
+	get_pk $db $table
+	for idx in $(seq -s "	" 1 1 $rows_affected)
+	do
+		case $dryrun in 
+			0) 	[ $idx -eq 1 ] && echo "DELETE FROM $table WHERE $pk = '$last_id';" || echo "DELETE FROM $table WHERE $pk = '$((last_id + (idx - 1) * autoinc_inc))';"
+				;;
+			1) 
+				[ $idx -eq 1 ] && echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE';" || echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE + $(((idx - 1) * autoinc_inc))';"
+				;;
+		esac
+	done
+}
+
 replace_rollback()
 {
 	case "$3" in
@@ -534,36 +550,32 @@ replace_rollback()
 	[ $rr_nkeys -eq $rr_nkeys_used ] && rr_using_primary=1
 	[ $auto_increment -eq 1  ] && rr_using_primary=1
 	# if both primary key and unique index are available, prefer unique index for rollback
-	[ $rr_nukeys -gt 0 -a $rr_nukeys -eq $rr_nukeys_used ] && rr_using_primary=0
+	if [ $rr_nukeys -gt 0 -a $rr_nukeys -eq $rr_nukeys_used ]
+	then
+		has_both=1
+		rr_using_primary=0
+	else
+		has_both=0
+	fi
 	#echo "-- DEBUG: keys=$rr_nkeys used=$rr_nkeys_used ukeys=$rr_nukeys used=$rr_nukeys_used using_primary=$rr_using_primary"
 	# special case: autoinc pk and no unique index
 	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $auto_increment -eq 1 ]
 	then
-		[ "$db" != "" ] && echo "USE $db" 
-		get_pk $db $table
 		IFS="	"
-		for idx in $(seq -s "	" 1 1 $rows_affected)
-		do
-			case $dryrun in 
-				0) 	[ $idx -eq 1 ] && echo "DELETE FROM $table WHERE $pk = '$last_id';" || echo "DELETE FROM $table WHERE $pk = '$((last_id + (idx - 1) * autoinc_inc))';"
-					;;
-				1) 
-					[ $idx -eq 1 ] && echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE';" || echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE + $(((idx - 1) * autoinc_inc))';"
-					;;
-			esac
-		done
+		autoinc_rollback
 		IFS="$saveIFS"
 		return
 	fi
 	IFS="
 "
-	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES(/(/ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" | tr "," "\t")
+	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES(/(/ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" -e "s/' *, */'	/g" -e "s/ *, */	/g")
 	do
 		IFS="	"
 		rr_col_values=($rr_row)
 		rr_idx=0
 		rr_kc=0
 		rr_where=""
+		undet=0
 		while true
 		do
 			[ $rr_idx -eq ${#rr_col_names[@]} ] && break
@@ -574,6 +586,11 @@ replace_rollback()
 						nobq="${rr_col_names[$rr_idx]//\`}"
 						if [ "${nobq,,}" = "${arg,,}" ]
 						then
+							if [ "$(echo ${rr_col_values[$rr_idx]} | grep -v "^'" | tr -dc '()')" != "" ]
+							then
+								undet=1	# insert contains non deterministic values
+								break
+							fi
 							[ $rr_kc -gt 0 ] && rr_where="$rr_where AND"
 							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
 							rr_kc=$((rr_kc + 1))
@@ -593,13 +610,27 @@ replace_rollback()
 					done
 					;;
 			esac
+			[ $undet -eq 1 ] && break
 			rr_idx=$((rr_idx + 1))
 		done
+		[ $undet -eq 1 ] && break
 		echo "DELETE FROM $table WHERE $rr_where;"
+		
 		[ $replace -eq 1 ] && delete_rollback  "$db" "$table" "$rr_where" 0
 		IFS="
 "
 	done
+	if [ $undet -eq 1 ]
+	then
+		if [ $has_both -eq 1 -a $replace -eq 0 -a $auto_increment -eq 1 ]
+		then
+			IFS="	"
+			echo "-- NOTICE: using PK for rollback due to non deterministic values in INSERT statement"
+			autoinc_rollback
+		else
+			echo "-- WARNING! undeterministic values in INSERT statement, rollback not possible"
+		fi
+	fi
 	IFS="$saveIFS"
 }
 
@@ -850,6 +881,11 @@ query_set()
 					display "not supported, use automatic variable @last_insert_id instead" 1
 					return
 				fi
+				if [[ ${arg,,} = *"join"* ]]
+				then
+					display "JOIN not supported in variable assignment" 1
+					return
+				fi
 				vval="$vval$arg "
 				;;
 		esac
@@ -898,8 +934,13 @@ query_set()
 		vtable=$(echo $vfrom | cut -d "." -f 2)
 		if [ "$vdb" = "$vtable" ]
 		then
-			display "table spec in variable expression must contain schema as well" 1
-			return
+			if [ "$default_db" != "" ]
+			then
+				vdb=$default_db
+			else
+				display "table spec in variable expression is missing and default schema is not set" 1
+				return
+			fi
 		fi
 		i=0
 		w=0
@@ -1404,14 +1445,15 @@ process_query() {
 	dq="${q[@]}"
 	dqq=$(pretty_print "$dq")
 	display "$dqq" 2
-	if [ ${#1} -gt $MAX_QUERY_SIZE ]
-	then
-		display "" 0
-		display "Statement too long, max $MAX_QUERY_SIZE chars allowed" 1
-		display "" 0
-		total_errors=$((total_errors+1))
-		return
-	fi
+	# should be fixed with unbuffering
+	#if [ ${#1} -gt $MAX_QUERY_SIZE ]
+	#then
+	#	display "" 0
+	#	display "Statement too long, max $MAX_QUERY_SIZE chars allowed" 1
+	#	display "" 0
+	#	total_errors=$((total_errors+1))
+	#	return
+	#fi
 	if [ "${q[0],,}" != "set" ]
 	then
 		insert_vars "$1"
