@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.6.5"
+VERSION="1.6.6"
 BASE=/usr/local/executor
 #MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -393,7 +393,7 @@ run_statement()
 	fi
 	case $(echo ${1,,} | cut -d" " -f 1) in
 		'insert'|'replace') 
-			[ $2 -eq 0 -a $auto_increment -eq 1 ] && q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()") || q_last_id=0
+			[ $auto_increment -eq 1 ] && q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()") || q_last_id=0
 			;;
 		*)
 			q_last_id=0
@@ -568,7 +568,7 @@ replace_rollback()
 	fi
 	IFS="
 "
-	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ VALUES //ig" -e "s/ VALUES(/(/ig" -e "s/ VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" -e "s/' *, */'	/g" -e "s/ *, */	/g")
+	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ *VALUES *//ig" -e "s/ *VALUES *(/(/ig" -e "s/ *VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" -e "s/' *, */'	/g" -e "s/ *, */	/g")
 	do
 		IFS="	"
 		rr_col_values=($rr_row)
