@@ -3,7 +3,8 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.6.9"
+VERSION="1.7.5"
+HOSTFILE=/etc/executor.conf
 BASE=/usr/local/executor
 #MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
@@ -104,11 +105,11 @@ mysql_query()
 	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$(cat $cached_db_tmpf 2>/dev/null)" ] 
 	then
 		echo "use $2;"  >&${mysqlc[1]}
-		mysql_debug "mysql>use $2;"
+		mysql_debug "($ticket)>use $2;"
 		echo "$2" > $cached_db_tmpf
 	fi
 	echo "$thisquery;" >&${mysqlc[1]}
-	mysql_debug "mysql>$thisquery;"
+	mysql_debug "($ticket)>$thisquery;"
 	while read -t 15 -u ${mysqlc[0]} row
 	do
 		if [ "$row" = "--------------" ]
@@ -127,13 +128,13 @@ mysql_query()
 					'use')
 							add_debug "use ($qtype)"
 							echo "$row"
-							mysql_debug "$row"
+							mysql_debug "($ticket)<$row"
 							[[ $row == *"Database changed"* ]] && break
 							;;
 					'update')
 							add_debug "update ($qtype)"
 							echo "$row"
-							mysql_debug "$row"
+							mysql_debug "($ticket)<$row"
 							[[ $row == *"Rows matched:"* ]] && break
 							;;
 					'select'|'show')
@@ -142,13 +143,13 @@ mysql_query()
 							[[ $row == *"row"*"in set"* ]] && break
 							[[ $row == "ERROR "* ]] && break
 							echo "$row"
-							mysql_debug "$row"
+							mysql_debug "($ticket)<$row"
 							;;
 					*)
 							add_debug "default ($qtype)"
 							[[ $row == "ERROR "* ]] && break
 							echo "$row"
-							mysql_debug "$row"
+							mysql_debug "($ticket)<$row"
 							if [[ $row == *"row"*"affected"* ]]
 							then 
 								echo "$row" | cut -d " " -f 3 > $rows_tmpf
@@ -161,14 +162,14 @@ mysql_query()
 				[[ $row == *"Empty set"* ]] && break
 				[[ $row == *"row"*"in set"* ]] && break
 				echo "$row"
-				mysql_debug "$row"
+				mysql_debug "($ticket)<$row"
 				;;
 		esac
 		[[ $row == "ERROR "* ]] && break
 	done
 	if [[ $row == "ERROR "* ]]
 	then
-		mysql_debug "$row"
+		mysql_debug "($ticket)<$row"
 		echo "$row" > $errors_tmpf
 		error=1
 		return
@@ -277,17 +278,20 @@ show_form()
 	printf "<FONT SIZE=2>Executor version: $VERSION<BR></FONT><BR>"
 	printf "<FORM METHOD=\"POST\" ACTION=\"$SCRIPT_NAME\" accept-charset=\"UTF-8\">\n"
 	printf "<TABLE>\n"
-	printf "<TR><TD>Host:</TD><TD><INPUT TYPE=TEXT NAME=\"host\" VALUE=\"$host\" MAXLENGTH=36 SIZE=16></TD></TR>\n"
+	printf "<TR><TD>Host:</TD>"
+	printf "<TD><SELECT NAME=\"host\" SIZE=1>"
+	IFS="
+"
+	for ho in $(cat $HOSTFILE)
+	do
+		[ "$ho" = "$host" ] && printf "<OPTION SELECTED>$ho\n" || printf "<OPTION>$ho\n"
+	done
+	printf "</SELECT></TD></TR>\n"
 	printf "<TR><TD>User:</TD><TD><INPUT TYPE=TEXT NAME=\"user\" VALUE=\"$user\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>Password:</TD><TD><INPUT TYPE=PASSWORD NAME=\"password\" VALUE=\"$password\" MAXLENGTH=40 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$default_db\" MAXLENGTH=32 SIZE=32></TD></TR>\n"
 	printf "<TR><TD>Ticket #:</TD><TD><INPUT TYPE=TEXT NAME=\"ticket\" VALUE=\"$ticket\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
-	if [ $kill_backq -eq 0 ]
-	then
-		printf "<TR><TD>Remove backquotes:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"backq\"></TD></TR>\n" 
-	else
-		printf "<TR><TD>Remove backquotes:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"backq\" VALUE=\"on\" CHECKED></TD></TR>\n" 
-	fi
+	printf "<TR><TD>Remove backquotes:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"backq\"></TD></TR>\n" 
 	[ $dryrun -eq 1 ] && textarea=$(escape_html "$(unescape_textarea $query)")
 	printf "<TR><TD COLSPAN=2><TEXTAREA NAME=\"query\" ROWS=8 COLS=200>%s</TEXTAREA></TD></TR>\n" "$textarea"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
@@ -779,10 +783,42 @@ index_in_use()
 		local ldb=$2
 		local ltable=$3
 	fi
-	wa=$(echo $1 | sed -e "s/ AND /\\\n/gI" -e "s/ in /=/gI")
-	hash="w="$(echo -e $wa | cut -d"=" -f 1 | tr -d " " | tr "\n" ",")"d="$ldb",t="$ltable
+	columns_check=1
+	hash="w="$1"d="$ldb",t="$ltable
 	[ "$iiu_cache" = "$hash" ] && return
-	iiu_cache="$hash"
+	tc=$(mysql_query "SELECT GROUP_CONCAT(COLUMN_NAME SEPARATOR ' ') FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '$ldb' AND TABLE_NAME = '$ltable'")
+	tc_a=($(echo $tc))
+	wc_a=($(echo $1 | sed -e"s/=/ = /g" -e "s/\`\.\`/./g" -e "s/\`/ /g"))
+	cl=""
+	for arg in ${wc_a[@]}
+	do
+		m=0
+		for arg2 in ${tc_a[@]}
+		do
+			if [ "${arg,,}" = "${arg2,,}" ]
+			then
+				cl="$cl$arg2 "
+				m=1
+				break
+			fi 
+		done
+		if [ $m -eq 0 ]
+		then
+			if [ $(echo $arg | tr -d "'0123456789.-") = "$arg" ]
+			then
+				case "${arg^^}" in
+					'='|'IS'|'NULL'|'LIKE'|'AND'|'OR'|'>'|'<'|'BETWEEN'|'<='|'>='|'IN'|'('|')');;
+					*)
+						display "column $arg does not exist" 1
+						using_index=0
+						columns_check=0
+						return
+						;;
+				esac
+			fi
+		fi
+	done
+	cl_a=($cl)
 	saveIFS="$IFS"
 	IFS="
 "
@@ -800,9 +836,8 @@ index_in_use()
 		do
 			idxcol=$(echo $idx_cols | cut -d"," -f $i)
 			[ $idx_parts -gt 1 ] && seq=$(mysql_query "SELECT seq_in_index FROM information_schema.statistics WHERE table_schema = '$ldb' AND table_name = '$ltable' AND index_name = '$idx_name' AND column_name = '$idxcol'") || seq=1
-			for frow in $(echo -e $wa)
+			for fld in ${cl_a[@]}
 			do
-				fld=$(echo $frow | cut -d"=" -f 1 | tr -dc "A-Za-z0-9_")
 				if [ "${fld,,}" = "${idxcol,,}" ]
 				then
 					ic=$((ic+1))
@@ -838,6 +873,7 @@ index_in_use()
 		[ $enable_ninja -eq 1 ] && display "NOTICE: index ($ninjaidx) has very low cardinality, and will be skipped. Enable <I>ninja mode</I> to use it regardless." 3
 	else
 		enable_ninja=0
+		iiu_cache="$hash"
 	fi
 	IFS="$saveIFS"
 }
@@ -980,6 +1016,7 @@ query_set()
 			i=$((i + 1))
 		done
 		index_in_use "$vcond" $vdb $vtable
+		[ $columns_check -eq 0 ] && return
 		if [ $using_index -eq 0 ]
 		then
 			display "variable expression not using an index" 1
@@ -1087,6 +1124,7 @@ query_delete()
 		return
 	fi
 	index_in_use "$where"
+	[ $columns_check -eq 0 ] && return
 	if [ $using_index -eq 0 ]
 	then
 		num_rows
@@ -1176,6 +1214,7 @@ get_columns()
 	cols=""
 	q=0
 	lfp=1
+	sc=0
 	for idx in $(seq 1 1 ${#1})
 	do
 		case "${1:$idx:1}" in
@@ -1187,7 +1226,15 @@ get_columns()
 			'=') 	if [ $q -eq 0 ]
 				then
 					col2add=$(echo ${1:$lfp:$((idx-lfp))})
-					cols="$cols${col2add##*,}"
+					cols="$cols${col2add##*,} "
+					lfp=$((idx+1))
+					sc=1;
+				fi
+				;;
+			',')
+				if [ $sc -eq 1 -a $q -eq 0 ]
+				then
+					sc=0
 					lfp=$((idx+1))
 				fi
 				;;
@@ -1294,6 +1341,7 @@ query_update()
 		fi
 	fi
 	index_in_use "$where"
+	[ $columns_check -eq 0 ] && return
 	if [ $using_index -eq 0 ]
 	then
 		display "we couldn't find any usable index to satisfy WHERE condition" 1
@@ -1458,7 +1506,8 @@ process_query() {
 	q_nb=$(echo "$1" | sed -e "s/^ *//")
 	IFS=" " q=($q_nb)
 	display "----- Processing query #$2 ------" 2
-	mysql_debug "-- Query #$2"
+	rn=$(date "+%Y-%m-%d %H:%M:%S.%3N")
+	mysql_debug "($ticket)>-- Query #$2 @ $rn"
 	dq="${q[@]}"
 	dqq=$(pretty_print "$dq")
 	display "$dqq" 2
@@ -1509,7 +1558,6 @@ total_query_count()
 	lq=""
 	for q in $(unescape_execute "$query")
 	do
-		[ "$(echo -n $q | tr -d ' ')" = "" ] && continue
 		if [ $(open_quotes "$q") -eq 1 ]
 		then
 			if [ $qo -eq 0 ]
@@ -1527,6 +1575,8 @@ total_query_count()
 			then
 				lq="$lq$q;"
 				continue
+			else
+				[ "$(echo -n $q | tr -d ' ')" = "" ] && continue
 			fi
 		fi
 		total_queries=$((total_queries + 1))
@@ -1630,6 +1680,13 @@ then
 		then
 			display "$(echo "$myerr" | tail -1)" 1
 		else
+			if [ $kill_backq -eq 1 ]
+			then
+				display "Backquotes removed. Please execute dry-run again." 2
+				show_form
+				printf "$closing_tags\n"
+				exit 0
+			fi
 			if [ "$query" = "" ]
 			then
 				display "Connected to $host" 0
@@ -1652,7 +1709,6 @@ then
 				display "<div id=\"clip_area\">" 0
 				for q in $(unescape_execute "$query")
 				do
-					[ "$(echo -n $q | tr -d ' ')" = "" ] && continue
 					if [ $(open_quotes "$q") -eq 1 ]
 					then
 						if [ $qo -eq 0 ]
@@ -1670,6 +1726,8 @@ then
 						then
 							lq="$lq$q;"
 							continue
+						else
+							[ "$(echo -n $q | tr -d ' ')" = "" ] && continue
 						fi
 					fi
 					qc=$(($qc + 1))
