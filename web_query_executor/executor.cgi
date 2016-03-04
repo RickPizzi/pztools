@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.7.5"
+VERSION="1.7.6"
 HOSTFILE=/etc/executor.conf
 BASE=/usr/local/executor
 #MAX_QUERY_SIZE=9000
@@ -788,11 +788,25 @@ index_in_use()
 	[ "$iiu_cache" = "$hash" ] && return
 	tc=$(mysql_query "SELECT GROUP_CONCAT(COLUMN_NAME SEPARATOR ' ') FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '$ldb' AND TABLE_NAME = '$ltable'")
 	tc_a=($(echo $tc))
-	wc_a=($(echo $1 | sed -e"s/=/ = /g" -e "s/\`\.\`/./g" -e "s/\`/ /g"))
+	wc_a=($(echo $1 | sed -e "s/=/ = /g" -e "s/\`\.\`/./g" -e "s/\`/ /g"))
 	cl=""
+	qo=0
 	for arg in ${wc_a[@]}
 	do
 		m=0
+		if [ $(open_quotes "$arg") -eq 1 ]
+		then
+			if [ $qo -eq 0 ]
+			then
+				qo=1
+				continue
+			else
+				qo=0
+				continue
+			fi
+		fi
+		[ $qo -eq 1 ] && continue
+		[ ${arg:0:1} = "@" ] && continue
 		for arg2 in ${tc_a[@]}
 		do
 			if [ "${arg,,}" = "${arg2,,}" ]
@@ -1493,7 +1507,7 @@ open_quotes()
 	niq=$(echo "$1" | sed -e "s/\\\'//g")
 	# this triggers a bash bug in some circumstances... nniq=${niq//[^\']}
 	nniq=$(echo "$niq" | tr -dc "'")
-	printf "%d %% 2\n" ${#nniq} | bc
+	echo $((${#nniq} % 2))
 }
 
 cm_log_q()
