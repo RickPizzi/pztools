@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.7.6"
+VERSION="1.7.8"
 HOSTFILE=/etc/executor.conf
 BASE=/usr/local/executor
 #MAX_QUERY_SIZE=9000
@@ -821,7 +821,7 @@ index_in_use()
 			if [ $(echo $arg | tr -d "'0123456789.-") = "$arg" ]
 			then
 				case "${arg^^}" in
-					'='|'IS'|'NULL'|'LIKE'|'AND'|'OR'|'>'|'<'|'BETWEEN'|'<='|'>='|'IN'|'('|')');;
+					'='|'IS'|'NULL'|'LIKE'|'AND'|'OR'|'>'|'<'|'BETWEEN'|'<='|'>='|'IN'|'('|')'|',');;
 					*)
 						display "column $arg does not exist" 1
 						using_index=0
@@ -1139,7 +1139,7 @@ query_delete()
 	fi
 	index_in_use "$where"
 	[ $columns_check -eq 0 ] && return
-	if [ $using_index -eq 0 ]
+	if [ $using_index -eq 0 -a $ninja -eq 0 ]
 	then
 		num_rows
 		if [ $rows -ge 100000 ]
