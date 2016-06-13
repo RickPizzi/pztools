@@ -3,7 +3,7 @@
 #	web query executor
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.7.8"
+VERSION="1.7.10"
 HOSTFILE=/etc/executor.conf
 BASE=/usr/local/executor
 #MAX_QUERY_SIZE=9000
@@ -89,6 +89,7 @@ connection_setup()
 	mysql_query "BEGIN" > /dev/null
 	start_time=$(mysql_query "SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%d-%m-%Y %H:%i:%S')")
 	mysql_query "SET NAMES utf8" > /dev/null
+	mysql_query "set session group_concat_max_len=4096" > /dev/null
 }
 
 mysql_query()
@@ -902,7 +903,7 @@ insert_vars()
 	do
 		vrn=$(echo "$vr" | cut -f 1)
 		vrv=$(echo "$vr" | cut -f 2)
-		qte=$(echo "$qte" | sed -e "s/@$vrn,/'$vrv',/Ig" -e "s/@$vrn)/'$vrv')/Ig" -e "s/@$vrn /'$vrv' /Ig" -e "s/@$vrn\$/'$vrv'/Ig") 
+		qte=$(echo "$qte" | sed -e "s/@$vrn,/'$vrv',/Ig" -e "s/@$vrn)/'$vrv')/Ig" -e "s/@$vrn /'$vrv' /Ig" -e "s/@$vrn\$/'$vrv'/Ig" -e "s/@$vrn+/'$vrv'+/Ig" -e "s/@$vrn-/'$vrv'-/Ig") 
 	done
 	IFS="$saveIFS"
 }
@@ -970,7 +971,7 @@ query_set()
 		display "variable expression must be enclosed within \"(\" and \")\"" 1
 		return
 	fi
-	vval=$(echo "$vval" | tr -d "()")
+	vval=$(echo "$vval" | sed -e "s/^(//" -e "s/)$//" -e "s/)[; ]*$//")
 	IFS=" " q=($vval)
 	if [ ${q[0],,} != "select" ]
 	then
@@ -1048,24 +1049,39 @@ query_set()
 		done
 		insert_vars "$vcheck"
 		vrows=$(mysql_query "$qte")
-		case "$vrows" in
-			'0')
-				display "expression returns no rows" 1
-				return
-				;;
-			'1')
-				;;
-			'')
-				
-				display "$(cat $errors_tmpf 2>/dev/null)" 1
-				return
-				;;
-			*)
-				display "expression returns more than one row" 1
-				return
-				;;
-		esac
+	else
+		insert_vars "$vval"
+		qres=$(mysql_query "$qte")
+		if [ "$qres" = "" ]
+		then
+			display "expression returns no value" 1
+			return
+		fi
+		if [ "$qres" = "NULL" ]
+		then
+			display "expression returns a NULL value" 1
+			return
+		fi
+		vrows=$(echo "$qres" | wc -l)
 	fi
+	case "$vrows" in
+		'0')
+			display "expression returns no rows" 1
+			return
+			;;
+		'1')
+			
+			;;
+		'')
+			
+			display "$(cat $errors_tmpf 2>/dev/null)" 1
+			return
+			;;
+		*)
+			display "expression returns more than one row" 1
+			return
+			;;
+	esac
 	insert_vars "$vval"
 	vres=$(mysql_query "$qte")
 	display "Variable value assigned: @$vname = '$vres'" 3
@@ -1525,15 +1541,6 @@ process_query() {
 	dq="${q[@]}"
 	dqq=$(pretty_print "$dq")
 	display "$dqq" 2
-	# should be fixed with unbuffering
-	#if [ ${#1} -gt $MAX_QUERY_SIZE ]
-	#then
-	#	display "" 0
-	#	display "Statement too long, max $MAX_QUERY_SIZE chars allowed" 1
-	#	display "" 0
-	#	total_errors=$((total_errors+1))
-	#	return
-	#fi
 	if [ "${q[0],,}" != "set" ]
 	then
 		insert_vars "$1"
