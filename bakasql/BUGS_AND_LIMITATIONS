@@ -1,0 +1,3 @@
+KNOWN BUGS AND LIMITATIONS:
+
+- if you try and change a primary key with an update statement, rollback code will be incorrect
