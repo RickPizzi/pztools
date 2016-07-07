@@ -14,8 +14,9 @@ What you get:
 Installation notes:
 
 - the system user running this script must have proper grants on the databases, from the host the CGI script runs from
-- the script runs under apache httpd, put it in the cgi-bin directory and configure your web server accordingly
+- the script runs under apache httpd, put it in the cgi-bin directory (usually /var/www/cgi-bin) and configure your web server accordingly
 - you need to compile the bakautils.c program (gcc -O3 -o bakautils bakautils.c) and place it according to the path at the top of the CGI script.
+- place the images from the images folder in your /var/www/html folder
  
 WATCH OUT: this is early stage software. Bugs are there. Make sure to always check the rollback code in dry run mode before you run the actual changes.
 
