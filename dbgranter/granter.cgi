@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-VERSION="0.4.4"
+VERSION="0.4.5"
 #
 # NOTICE: CONFIG FILE
 # Config file /etc/dbgranter.conf should contain the following:
@@ -158,7 +158,7 @@ show_form()
 	else
 		printf "<TR><TD>Grant:</TD><TD><INPUT TYPE=TEXT NAME=\"lgrant\" VALUE=\"%s\" MAXLENGTH=64 SIZE=16 readonly=\"readonly\">@<INPUT TYPE=TEXT NAME=\"rgrant\" VALUE=\"%s\" MAXLENGTH=16 SIZE=16 readonly=\"readonly\"></TD></TR>\n" "$user" "$vpn_mask"
 	fi
-	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$schema\" MAXLENGTH=32 SIZE=16></TD></TR>\n"
+	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$schema\" MAXLENGTH=64 SIZE=40></TD></TR>\n"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
 	printf "<TR><TD><INPUT TYPE=\"SUBMIT\" VALUE=\"SHOW GRANTS\">\n"
 	printf "</TD><TD ALIGN=RIGHT><FONT SIZE=2><A HREF=\"%s\"><B>START OVER</B></FONT></TD></TR>\n" "$SCRIPT_NAME"
