@@ -3,10 +3,9 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.8.21"
+VERSION="1.8.22"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/executor
-#MAX_QUERY_SIZE=9000
 MIN_REQ_CARDINALITY=5
 BAKA_USER="bakasql"
 BAKA_PASSWORD="BakaBaka"
@@ -210,7 +209,6 @@ mysql_query()
 
 delete_rollback ()
 {
-	#profile_in
 	case $4 in
 		0) insert="INSERT";;
 		1) insert="REPLACE";;
@@ -223,7 +221,6 @@ delete_rollback ()
 	rtc=$(echo $tc | sed -e "s/,/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@'),REPLACE(REPLACE(REPLACE(/g" -e "s/^/REPLACE(REPLACE(REPLACE(/g" -e "s/$/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@')/g")
 	mysql_query "SELECT $rtc FROM $1.$2 WHERE $3 /* delete_rollback */" > $dump_tmpf
 	[ -s $dump_tmpf ] && cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/$insert INTO $2 VALUES ('/g" -e "s/$/');/g" -e "s/'NULL'/NULL/g" -e "s/@xc_NL@/\\\n/g" -e "s/@xc_CR@/\\\r/g" -e "s/@xc_TAB@/\\\t/g"
-	#profile_out "delete_rollback"
 }
 
 page_style()
@@ -823,7 +820,6 @@ rollback_pkwhere()
 
 verify_column_names()
 {
-#	profile_in
 	columns_check=1
 	if [ "$2.$3" != "$vcn_cache" ]
 	then
@@ -836,50 +832,6 @@ verify_column_names()
 		display "column $cl does not exist" 1
 		columns_check=0
 	fi
-#	tc_a=($(echo $vcn_tc))
-#	wc_a=($(echo $1 | sed -e "s/=/ = /g" -e "s/\`\.\`/./g" -e "s/\`/ /g"))
-#	cl=""
-#	qo=0
-#	for arg in ${wc_a[@]}
-#	do
-#		m=0
-#		if [ $(open_quotes "$arg") -eq 1 ]
-#		then
-#			if [ $qo -eq 0 ]
-#			then
-#				qo=1
-#				continue
-#			else
-#				qo=0
-#				continue
-#			fi
-#		fi
-#		[ $qo -eq 1 ] && continue
-#		[ ${arg:0:1} = "@" ] && continue
-#		for arg2 in ${tc_a[@]}
-#		do
-#			if [ "${arg,,}" = "${arg2,,}" ]
-#			then
-#				cl="$cl$arg2 "
-#				m=1
-#				break
-#			fi 
-#		done
-#		if [ $m -eq 0 ]
-#		then
-#			if [ $(echo $arg | tr -d "'0123456789.-") = "$arg" ]
-#			then
-#				case "${arg^^}" in
-#					'='|'IS'|'NULL'|'LIKE'|'AND'|'OR'|'>'|'<'|'BETWEEN'|'<='|'>='|'IN'|'('|')'|',');;
-#					*)
-#						display "column $arg does not exist" 1
-#						columns_check=0
-#						;;
-#				esac
-#			fi
-#		fi
-#	done
-#	profile_out "verify_column_names"
 }
 
 index_in_use()
