@@ -462,7 +462,7 @@ char **argv;
 	char *b, *p, *r, *i;
 	unsigned char sc;
 	static char cl[1048576];
-	static char *ign_list = "= IS NULL LIKE AND OR > < BETWEEN <= >= IN ( ) ,";
+	static char *ign_list = "= IS NOT NULL LIKE AND OR > < BETWEEN <= >= IN ( ) ,";
 
 	if (argc < 3)  {
 		fprintf(stderr, "%s: not enough arguments\n", argv[1]);
