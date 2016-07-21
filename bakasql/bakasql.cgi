@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.8.20"
+VERSION="1.8.21"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/executor
 #MAX_QUERY_SIZE=9000
@@ -49,7 +49,7 @@ unescape_textarea()
 	then
 		unescape_input "$1" | sed -e "s/%0D%0A/\n/g"
 	else
-		unescape_input "$1" | sed -e "s/%0D%0A/\n/g" -e "s/\`\.\`/./g" -e "s/\`//g"
+		unescape_input "$1" | sed -e "s/%0D%0A/\n/g" -e "s/\`\.\`/./g" -e "s/\`/ /g"
 	fi
 }
 
@@ -488,21 +488,6 @@ run_statement()
 array_idx()
 {
 	$BAKAUTILS array_idx "$1" "$2"  2>>/tmp/bakautils.log
-#	profile_in
-#	idx=-1
-#	c=0
-#	a=("$1")
-#	for arg in ${a[@]}
-#	do
-#		if [ "${arg,,}" = "$2" ]
-#		then
-# 			idx=$c
-#			break
-#		fi
-#		c=$(($c + 1))
-#	done
-#	echo $idx
-#	profile_out "array_idx"
 }
 
 check_key()
@@ -762,24 +747,6 @@ index_parts()
 check_pk_use()
 {
 	pk_in_use=$($BAKAUTILS check_pk_use "$1" "$pk"  2>>/tmp/bakautils.log)
-#	profile_in
-#	pk_in_use=1
-#	wa=($(echo "$1" | sed -e "s/, /,/g"))
-#	c=0
-#	for arg in ${wa[@]}
-#	do
-#		warg=$(echo $arg | cut -d"=" -f 1 |  cut -d"." -f 2)
-#		for parg in $pk
-#		do
-#			if [ "${parg,,}" = "${warg,,}" ]
-#			then
-#				c=$(($c + 1))
-#				break
-#			fi
-#		done
-#	done
-#	[ $c -lt $2 ] && pk_in_use=0
-#	profile_out "check_pk_use"
 }
 
 check_table_presence()
@@ -836,24 +803,7 @@ check_columns()
 
 rollback_args()
 {
-#	if [ "$user" = "rpizzi" ]
-#	then
-#		echo "$1" >> /tmp/pippo
-		$BAKAUTILS rollback_args "$1" 2>>/tmp/bakautils.log
-#		return
-#	fi
-#	profile_in
-#	echo -n "CONCAT("
-#	c=0
-#	for arg in $1
-#	do
-#		[ $c -gt 0 ] && echo -n ",',',"
-#		#echo -n "'$arg=','\\\'',IF($arg IS NOT NULL,TRIM(BOTH '\'' FROM QUOTE($arg)),'NULL'),'\\\''"
-#		echo -n "'$arg= ', IF($arg IS NOT NULL, QUOTE($arg),'NULL')"
-#		c=$(($c + 1))
-#	done
-#	echo ")"
-#	profile_out "rollback_args"
+	$BAKAUTILS rollback_args "$1" 2>>/tmp/bakautils.log
 }
 
 rollback_pkwhere()
@@ -948,11 +898,7 @@ index_in_use()
 		using_index=0
 		return
 	fi
-#	profile_in
-#	cl_a=($cl)
 	using_index=0
-#	if [ "$user" = "rpizzi" ]
-#	then
 		if [ "$ldb.$ltable" != "$iiu_cache" ]
 		then
 			mysql_query "SELECT s.column_name, s.seq_in_index,  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name, (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE table_schema =  '$ldb' AND table_name = '$ltable' AND index_name=s.index_name) AS size FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.column_name ORDER BY s.index_name, s.seq_in_index" > $cardinfo_tmpf
@@ -977,88 +923,11 @@ index_in_use()
 			fi
 		fi
 		return
-#	fi
-#	saveIFS="$IFS"
-#	IFS="
-#"
-#	if [ "$ldb.$ltable" != "$iiu_cache" ]
-#	then
-#		mysql_query "SELECT GROUP_CONCAT(s.column_name ORDER BY s.seq_in_index), COUNT(*),  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.index_name" > $cardinfo_tmpf
-#		iiu_cache="$ldb.$ltable"
-#	fi
-#	for irow in $(cat $cardinfo_tmpf)
-#	do
-#		idx_cols=$(echo $irow | cut -f 1)
-#		idx_parts=$(echo $irow | cut -f 2)
-#		idx_card=$(echo $irow | cut -f 3)
-#		idx_name=$(echo $irow | cut -f 4)
-#		ic=0
-#		oseq=0
-#		pm=1
-#		for i in $(seq 1 1 $idx_parts)
-#		do
-#			idxcol=$(echo $idx_cols | cut -d"," -f $i)
-#			[ $idx_parts -gt 1 ] && seq=$(mysql_query "SELECT seq_in_index FROM information_schema.statistics WHERE table_schema = '$ldb' AND table_name = '$ltable' AND index_name = '$idx_name' AND column_name = '$idxcol'") || seq=1
-#			for fld in ${cl_a[@]}
-#			do
-#				if [ "${fld,,}" = "${idxcol,,}" ]
-#				then
-#					ic=$((ic+1))
-#					[ $((seq-oseq)) -gt 1 ] && pm=0
-#					oseq=$seq
-#					break
-#				fi
-#			done
-#		done
-#		[ $ic -eq 0 ] && pm=0
-#		#display "DEBUG: $idx_cols $idx_parts $idx_name $pm" 0
-#		if [ $ic -eq $idx_parts -o $pm -eq 1 ]
-#		then
-#			if [ "$idx_name" = "PRIMARY" -o $idx_card -ge $MIN_REQ_CARDINALITY ]
-#			then
-#				using_index=1
-#				break
-#			else
-#				if [ $ninja -eq 0 ]
-#				then
-#					enable_ninja=1
-#					ninjaidx=$idx_cols
-#				else
-#					display "WARNING: index ($idx_cols) has very low cardinality. Considering it due to <I>ninja mode</I> being enabled. Good luck." 3
-#					using_index=1
-#					break
-#				fi
-#			fi
-#		fi
-#	done
-#	if [ $using_index -eq 0 ]
-#	then
-#		[ $enable_ninja -eq 1 ] && display "NOTICE: index ($ninjaidx) has very low cardinality, and will be skipped. Enable <I>ninja mode</I> to use it regardless." 3
-#	else
-#		enable_ninja=0
-#	fi
-#	IFS="$saveIFS"
-#	profile_out "index_in_use"
 }
 
 insert_vars()
 {
-	cp $vars_tmpf /tmp/pippo
-	echo "--$1-- --$last_id--" > /tmp/pluto
 	qte=$($BAKAUTILS insert_vars $vars_tmpf "$1" $last_id 2>>/tmp/bakautils.log)
-#	profile_in
-#	qte=$(echo "$1" | sed -e "s/@last_insert_id/'$last_id'/Ig")
-#	saveIFS="$IFS"
-#	IFS="
-#"
-#	for vr in $(cat $vars_tmpf 2>/dev/null)
-#	do
-#		vrn=$(echo "$vr" | cut -f 1)
-#		vrv=$(echo "$vr" | cut -f 2)
-#		qte=$(echo "$qte" | sed -e "s/@$vrn,/'$vrv',/Ig" -e "s/@$vrn)/'$vrv')/Ig" -e "s/@$vrn /'$vrv' /Ig" -e "s/@$vrn\$/'$vrv'/Ig" -e "s/@$vrn+/'$vrv'+/Ig" -e "s/@$vrn-/'$vrv'-/Ig") 
-#	done
-#	IFS="$saveIFS"
-#	profile_out "insert_vars"
 }
 
 query_set()
@@ -1397,49 +1266,7 @@ query_insert()
 
 get_columns()
 {
-#	if [ "$user" = "rpizzi" ]
-#	then
-		cols=$($BAKAUTILS get_columns "$1" 2>>/tmp/bakautils.log)
-#		return
-#	fi
-#	profile_in
-#	saveIFS="$IFS"
-#	IFS="
-#"
-#	cols=""
-#	echo "in $1" >> /tmp/pippo
-#	q=0
-#	lfp=1
-#	sc=0
-#	for idx in $(seq 1 1 ${#1})
-#	do
-#		case "${1:$idx:1}" in
-#			"'") 	if [ "${1:$((idx-1)):1}" != "\\" ]
-#				then
-#					[ $q -eq 0 ] && q=1 || q=0
-#				fi
-#				;;
-#			'=') 	if [ $q -eq 0 ]
-#				then
-#					col2add=$(echo ${1:$lfp:$((idx-lfp))})
-#					cols="$cols${col2add##*,} "
-#					lfp=$((idx+1))
-#					sc=1;
-#				fi
-#				;;
-#			',')
-#				if [ $sc -eq 1 -a $q -eq 0 ]
-#				then
-#					sc=0
-#					lfp=$((idx+1))
-#				fi
-#				;;
-#			*) 	;;
-#		esac
-#	done
-#	echo "out $cols" >> /tmp/pippo
-#	IFS="$saveIFS"
-#	profile_out "get_columns"
+	cols=$($BAKAUTILS get_columns "$1" 2>>/tmp/bakautils.log)
 }
 
 query_update()
@@ -1673,20 +1500,6 @@ show_rollback()
 pretty_print()
 {
 	$BAKAUTILS pretty_print "$1" 2>>/tmp/bakautils.log
-#	profile_in
-#	c=1
-#	for arg in $1
-#	do
-#		if [ $c -eq 16 ]
-#		then
-#			echo -n "$arg<br>"	
-#			c=1
-#		else
-#			echo -n "$arg "
-#		fi
-#		c=$((c + 1))
-#	done
-#	profile_out "pretty_print"
 }
 
 open_quotes()
@@ -1748,35 +1561,6 @@ total_query_count()
 {
 	unescape_execute "$query" > $totcnt_tmpf
 	total_queries=$($BAKAUTILS total_query_count $totcnt_tmpf  2>>/tmp/bakautils.log)
-#	total_queries=0
-#	qo=0
-#	lq=""
-#	for q in $z
-#	do
-#		if [ $(open_quotes "$q") -eq 1 ]
-#		then
-#			if [ $qo -eq 0 ]
-#			then
-#				qo=1
-#				lq="$lq$q;"
-#				continue
-#			else
-#				qo=0
-#				q="$lq$q"
-#				lq=""
-#			fi
-#		else
-#			if [ $qo -eq 1 ]
-#			then
-#				lq="$lq$q;"
-#				continue
-#			else
-#				[ "$(echo -n $q | tr -d ' ')" = "" ] && continue
-#			fi
-#		fi
-#		total_queries=$((total_queries + 1))
-#	done
-#	profile_out "total_query_count"
 }
 
 progress_bar_visibility_toggle()
