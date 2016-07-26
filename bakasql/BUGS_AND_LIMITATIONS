@@ -1,3 +1,4 @@
 KNOWN BUGS AND LIMITATIONS:
 
 - if you try and change a primary key with an update statement, rollback code will be incorrect
+- if, in an update statement, the where condition contains one of the columns touched by the update, rollback code will be incorrect
