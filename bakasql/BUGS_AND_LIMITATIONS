@@ -1,4 +1,4 @@
 KNOWN BUGS AND LIMITATIONS:
 
-- if you try and change a primary key with an update statement, rollback code will be incorrect
-- if, in an update statement, the where condition contains one of the columns touched by the update, rollback code will be incorrect
+- the tool will not support changing (part of)  a primary key with an update statement, as rollback code will be incorrect
+- if, in an update statement, the where condition contains one of the columns touched by the update, rollback may be incorrect; BakaSQL will try to fix simple cases for you but remember to always check rollback code generated in the dry run phase
