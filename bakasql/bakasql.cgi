@@ -3,15 +3,15 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.8.22"
+VERSION="1.8.24"
 HOSTFILE=/etc/bakasql.conf
-BASE=/usr/local/executor
+BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
 BAKA_USER="bakasql"
 BAKA_PASSWORD="BakaBaka"
 BAKA_HOST="10.10.2.145"
 BAKA_DB="bakasql"
-BAKAUTILS=/usr/local/executor/sbin/bakautils
+BAKAUTILS=$BASE/sbin/bakautils
 #
 set -f
 post=0
@@ -74,18 +74,18 @@ display() {
 debug() {
 	d_text=$(echo "$1" | od -vc)
 	echo ="<BR>DEBUG:<BR>$d_text<BR>"  >> $output_tmpf;
-	echo "$1" >> /usr/local/executor/log/debug.log
+	echo "$1" >> $BASE/log/debug.log
 }
 
 mysql_debug()
 {
-	echo "$1" >> /usr/local/executor/log/mysql_debug.log
+	echo "$1" >> $BASE/log/mysql_debug.log
 }
 
 add_debug()
 {
 	return
-	echo case $1: $(echo "$row" | tr -d "\n\r") >> /usr/local/executor/log/mysql_debug.log
+	echo case $1: $(echo "$row" | tr -d "\n\r") >> $BASE/log/mysql_debug.log
 }
 
 profile_in()
@@ -359,7 +359,7 @@ show_form()
 log()
 {
 	ts=$(date "+%Y-%m-%d %T")
-	printf "%s %-10s %-16s %-10s %-20s %s\n" "$ts" "$ticket" "$user" "$host" "$db" "$1" >> $BASE/log/executor.log
+	printf "%s %-10s %-16s %-10s %-20s %s\n" "$ts" "$ticket" "$user" "$host" "$db" "$1" >> $BASE/log/execution.log
 }
 
 post_checks()
@@ -489,7 +489,6 @@ array_idx()
 
 check_key()
 {
-	profile_in
 	c=0
 	a=("$1")
 	for arg in ${a[@]}
@@ -497,15 +496,12 @@ check_key()
 		display "$c $arg" 0
 		c=$((c + 1))
 	done
-	profile_out "check_key"
 }
 
 num_rows()
 {
 	[ "$nr_cache" = "$db.$table" ] && return
-	profile_in
 	rows=$(mysql_query  "SELECT TABLE_ROWS FROM information_schema.tables WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'")
-	profile_out "num_rows"
 	nr_cache="$db.$table"
 }
 
@@ -513,7 +509,6 @@ autoinc_rollback()
 {
 	[ "$db" != "" ] && echo "USE $db" 
 	get_pk $db $table
-	profile_in
 	for idx in $(seq -s "	" 1 1 $rows_affected)
 	do
 		case $dryrun in 
@@ -524,12 +519,10 @@ autoinc_rollback()
 				;;
 		esac
 	done
-	profile_out "autoinc_rollback"
 }
 
 get_col_names()
 {
-	profile_in
 	case "$2" in
 		0) 	rr_col_names=($(echo "$1" | cut -d "(" -f 2 | cut -d ")" -f 1 | sed -e "s/,/, /g" | tr -d ","))
 			rr_q="$1"
@@ -544,7 +537,6 @@ get_col_names()
 			fi
 			;;
 	esac
-	profile_out "get_col_names"
 }
 
 replace_rollback()
@@ -625,7 +617,6 @@ replace_rollback()
 		return
 	fi
 	[ "$db" != "" ] && echo "USE $db" 
-	profile_in
 	IFS="
 "
 	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ *VALUES *//ig" -e "s/ *VALUES *(/(/ig" -e "s/ *VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" -e "s/' *, */'	/g" -e "s/ *, */	/g")
@@ -680,7 +671,6 @@ replace_rollback()
 		IFS="
 "
 	done
-	profile_out "replace_rollback"
 	if [ $undet -eq 1 ]
 	then
 		if [ $has_both -eq 1 -a $replace -eq 0 -a $auto_increment -eq 1 ]
@@ -698,46 +688,36 @@ replace_rollback()
 get_pk()
 {
 	[ "$pk_cache" = "$1.$2" ] && return
-	profile_in
 	rs=$(mysql_query "SHOW INDEX FROM $1.$2 WHERE KEY_NAME = 'PRIMARY'" "$1")
 	pk=$(echo "$rs" | cut -f 5 | tr "\n" " " | sed -e "s/ $//g")
 	pk_cache="$1.$2"
-	profile_out "get_pk"
 }
 			
 check_autoincrement()
 {
 	[ "$ai_cache" = "$db.$table" ] && return
-	profile_in
 	auto_increment=$(mysql_query "SELECT IF(COUNT(*) = 1, 1, 0) FROM information_schema.columns WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND EXTRA = 'auto_increment'")
-	profile_out "check_autoincrement"
 	ai_cache="$db.$table"
 }
 
 autoincrement_name()
 {
 	[ "$ain_cache" = "$db.$table" ] && return
-	profile_in
 	ai_col_name=$(mysql_query "SELECT COLUMN_NAME FROM information_schema.columns WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND EXTRA = 'auto_increment'")
-	profile_out "autoincrement_name"
 	ain_cache="$db.$table"
 }
 			
 index_name()
 {
 	[ "$in_cache" = "$db.$table.$1" ] && return
-	profile_in
 	idxname=$(mysql_query "SELECT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$1'")
-	profile_out "index_name"
 	in_cache="$db.$table.$1"
 }
 
 index_parts()
 {
 	[ "$ip_cache" = "$db.$table.$1" ] && return
-	profile_in
 	idxcount=$(mysql_query "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND INDEX_NAME = '$1'")
-	profile_out "index_parts"
 	ip_cache="$db.$table.$1"
 }
 
@@ -765,9 +745,7 @@ check_table_presence()
 		table=$(echo $st | cut -d"." -f 2)
 	fi
 	[ "$ctp_cache" = "$db.$table" ] && return
-	profile_in
 	there=$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME= '$table'")
-	profile_out "check_table_presence"
 	if [ $there -eq 0 ]
 	then
 		display "No table named \"$table\" in schema \"$db\"" 1
@@ -781,21 +759,25 @@ check_table_presence()
 check_columns()
 {
 	[ "$cc_cache" = "$db.$table.$1" ] && return
-	profile_in
 	columns_ok=1
 	for arg in $1
 	do
 		[ $(echo $arg | fgrep -c ".") -gt 0 ] && arg=$(echo $arg | cut -d"." -f 2)
-		cc=$(mysql_query "SELECT COUNT(*) FROM information_schema.columns WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$arg' /* check_columns */")
-		if [ $cc -eq 0 ]
-		then
-			display "Column \"$arg\" does not exist" 1
-			columns_ok=0
-			return
-		fi
+		cc=$(mysql_query "SELECT COUNT(*) + IF (COLUMN_KEY = 'PRI', 1, 0) FROM information_schema.columns WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$arg' /* check_columns */")
+		case $cc in
+			0)
+				display "Column \"$arg\" does not exist" 1
+				columns_ok=0
+				return
+				;;
+			2)
+				display "Sorry, BakaSQL cannot update column \"$arg\" because is (part of) a primary key and rollback would be incorrect" 1
+				columns_ok=0
+				return
+				;;
+		esac
 	done
 	cc_cache="$db.$table.$1"
-	profile_out "check_columns"
 }
 
 rollback_args()
@@ -805,7 +787,6 @@ rollback_args()
 
 rollback_pkwhere()
 {
-	profile_in
 	echo -n "CONCAT("
 	c=0
 	for arg in $1
@@ -815,7 +796,6 @@ rollback_pkwhere()
 		c=$(($c + 1))
 	done
 	echo ")"
-	profile_out "rollback_pkwhere"
 }
 
 verify_column_names()
@@ -1340,12 +1320,12 @@ query_update()
 	then
 		if [ $(echo $where | fgrep -c "=") -ne 0 ]
 		then
-			display "Sorry, this tool does not support WHERE conditions with a mix of \"=\" and IN() at this time" 1
+			display "Sorry, BakaSQL does not support WHERE conditions with a mix of \"=\" and IN() at this time" 1
 			return
 		fi
 		if [ $(echo $where | fgrep -ic " and ") -ne 0 ]
 		then
-			display "Sorry, this tool does not support WHERE conditions with multiple IN()s at this time" 1
+			display "Sorry, BakaSQK does not support WHERE conditions with multiple IN()s at this time" 1
 			return
 		fi
 		c=$(($in + 1))
@@ -1431,7 +1411,28 @@ query_update()
 				if [ "$res" != "" ]
 				then
 					rollback=1
-					echo "UPDATE $table SET $res WHERE $where;" >> $rollback_file
+					# check special case where one of cols being updated is also in where clause
+					amr=0
+					if [ $pk_in_use -eq 1 ]
+					then
+						for uciw in $cols
+						do
+							if [[ ${where^^} == *" AND ${uciw^^} "* ]]
+							then
+								aw=$(echo "$where" | awk -F " AND $uciw" '{print $1}')
+								[ "$aw" = "$where" ] && aw=$(echo "$where" | awk -F " and $uciw" '{print $1}')
+								amr=$($BAKAUTILS check_pk_use "${aw,,}" "${pk,,}"  2>>/tmp/bakautils.log)
+								[ $amr -eq 1 ] && break
+							fi
+						done
+					fi
+					if [ $amr -eq 0 ]
+					then
+						echo "UPDATE $table SET $res WHERE $where;" >> $rollback_file
+					else
+						echo "-- where condition in the following code was modified to remove updated column $uciw" >> $rollback_file
+						echo "UPDATE $table SET $res WHERE $aw;" >> $rollback_file
+					fi
 				fi
 			fi
 		fi
@@ -1497,7 +1498,7 @@ process_query() {
 			cm_log_q "$qte"
 			;;
 		'select'|'show'|'create'|'drop'|'alter'|'truncate'|'grant'|'drop'|'revoke') 
-			display "Sorry, ${q[0]} not supported by this tool. This query will not be executed." 1
+			display "Sorry, ${q[0]} not supported by BakaSQL. This query will not be executed." 1
 			;;
 		'set') 
 			query_set "$qte" "$2"
@@ -1558,7 +1559,7 @@ copy_to_clipboard()
 
 cm_integration()
 {
-	/usr/local/executor/sbin/servicenow_integration.sh "$ticket" "$user" "$host" "$db" "$start_time" "$end_time" $cmlog_tmpf
+	$BASE/sbin/servicenow_integration.sh "$ticket" "$user" "$host" "$db" "$start_time" "$end_time" $cmlog_tmpf
 }
 
 printf "Content-Type: text/html; charset=utf-8\n\n"
