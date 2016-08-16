@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.8.24"
+VERSION="1.8.25"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -532,9 +532,9 @@ get_col_names()
 			then
 				rr_col_names_c=$(mysql_query "SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table'") 
 				rr_col_names=($(echo $rr_col_names_c | tr "," " "))
-				rr_q=$(echo "$1" | sed -e "s/VALUES/($rr_col_names_c) values/gi")
 				rr_cache1="$db.$table"
 			fi
+			rr_q=$(echo "$1" | sed -e "s/VALUES/($rr_col_names_c) values/gi")
 			;;
 	esac
 }
