@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.8.25"
+VERSION="1.8.26"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -1216,35 +1216,31 @@ query_update()
 	check_table_presence
 	[ $table_present -ne 1 ] && return
 	qon=0
-	for arg in ${q[@]}
-	do
-		[ "${arg,,}" = "where" ] && break
-		qcnt=$(echo $arg | tr -dc "'" | wc -c)
-		if [ $((qcnt%2)) -eq 1 ]
-		then
-			[ $qon -eq 0 ] && qon=1 || qon=0
-		fi
-		if [ $qon -eq 0 -a "${arg,,}" = "and" ] 
-		then
-			display "Syntax error near \"$arg\"" 1
-			return
-		fi
-	done
 	c=0
 	w=0
 	dml=""
 	for arg in ${q[@]}
 	do
-		if [ $c -ge 3 ]
+		qcnt=$(echo $arg | tr -dc "'" | wc -c)
+		if [ $((qcnt%2)) -eq 1 ]
 		then
-			if [ "${arg,,}" = "where" ]
-			then
-				w=$c
-				break
-			fi
-			dml="$dml $arg"
+			[ $qon -eq 0 ] && qon=1 || qon=0
 		fi
-		c=$(($c + 1))
+		if [ $qon -eq 0 ]
+		then
+			case "${arg,,}" in
+				'where')
+					w=$c
+					break
+					;;
+				'and') 
+					display "Syntax error near \"$arg\"" 1
+					return
+					;;
+			esac
+		fi
+		[ $c -ge 3 ] && dml="$dml $arg"
+		c=$((c + 1))
 	done
 	if [ $w -eq 0 ]
 	then

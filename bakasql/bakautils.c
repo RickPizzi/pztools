@@ -135,21 +135,20 @@ char **argv;
 	b = r;
 	for (p = r; *p; p++) {
 		switch(*p) {
+			case '\'':
+				if (qo)
+					qo=0;
+				else
+					qo=1;
+				break;
 			case ',':
-				b = p + 1;
+				if (!qo)
+					b = p + 1;
 				break;
 			case '=':
 				*p = 0x00;
-				if (u_quote_open(b)) {
-					if (qo)
-						qo=0;
-					else
-						qo=1;
-				}
-				else {
-					if (!qo)
-						printf("%s ", b);
-				}
+				if (!qo)
+					printf("%s ", b);
 				b = p + 1;
 				break;
 		}
