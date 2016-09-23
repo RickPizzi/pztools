@@ -8,7 +8,7 @@
 # Step 1: configure the variable below to point to new path
 # Step 2: run the script as root, after ensuring that the binlog being written has just been opened, because you need some 
 #         time for next step.
-# Step 3: issue a FLUSH BINARY LOG on the server, it will start writing the binlogs in the new path
+# Step 3: issue a FLUSH BINARY LOGS on the server, it will start writing the binlogs in the new path
 #
 # Note: slave(s) may be affected by the operation; to recover, just issue a STOP SLAVE; START SLAVE and that will clear the error
 #
