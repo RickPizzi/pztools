@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@rumbo.com Jan 2015
 #
-VERSION="1.8.26"
+VERSION="1.8.29"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -11,6 +11,7 @@ BAKA_USER="bakasql"
 BAKA_PASSWORD="BakaBaka"
 BAKA_HOST="10.10.2.145"
 BAKA_DB="bakasql"
+MAX_QUERY_SIZE=65535
 BAKAUTILS=$BASE/sbin/bakautils
 #
 set -f
@@ -24,6 +25,8 @@ default_db=""
 closing_tags="</FONT></BODY></HTML>"
 total_warnings=0
 total_errors=0
+last_last_id=0
+last_aitable=""
 tmpf=/tmp/bakasql.$$
 warnings_tmpf=/tmp/bakasql.warn.$$
 errors_tmpf=/tmp/bakasql.err.$$
@@ -833,7 +836,8 @@ index_in_use()
 	using_index=0
 		if [ "$ldb.$ltable" != "$iiu_cache" ]
 		then
-			mysql_query "SELECT s.column_name, s.seq_in_index,  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name, (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE table_schema =  '$ldb' AND table_name = '$ltable' AND index_name=s.index_name) AS size FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.column_name ORDER BY s.index_name, s.seq_in_index" > $cardinfo_tmpf
+#			mysql_query "SELECT s.column_name, s.seq_in_index,  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name, (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE table_schema =  '$ldb' AND table_name = '$ltable' AND index_name=s.index_name) AS size FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.column_name ORDER BY s.index_name, s.seq_in_index" > $cardinfo_tmpf
+			mysql_query "SELECT s.column_name, s.seq_in_index,  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name, (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE table_schema =  '$ldb' AND table_name = '$ltable' AND index_name=s.index_name) AS size FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' ORDER BY s.index_name, s.seq_in_index" > $cardinfo_tmpf
 			iiu_cache="$ldb.$ltable"
 		fi
 		cardmsg=$($BAKAUTILS index_in_use $cardinfo_tmpf "$cl" $MIN_REQ_CARDINALITY 2>>/tmp/bakautils.log)
@@ -1156,12 +1160,14 @@ query_insert()
 	table="${q[2]}"
 	[ "${q[3],,}" = "values" ] && nocols=1 || nocols=0
 	if [[ " ${q[@],,} " =~ " select " ]]; then
-		if [[ " ${q[@],,} " =~ " from " ]]; then
-			if [ $ninja -eq 0 ]
-			then
-				display "${3^^}... SELECT is a dangerous contruct and should be avoided! Enable <I>ninja mode</I> to use it regardless." 1
-				enable_ninja=1
-				return
+		if [[ ! " ${q[@],,} " =~ " values " ]]; then
+			if [[ " ${q[@],,} " =~ " from " ]]; then
+				if [ $ninja -eq 0 ]
+				then
+					display "${3^^}... SELECT is a dangerous contruct and should be avoided! Enable <I>ninja mode</I> to use it regardless." 1
+					enable_ninja=1
+					return
+				fi
 			fi
 		fi
 	fi
@@ -1175,10 +1181,14 @@ query_insert()
 	case $replace in
 		0) 
 			run_statement "$1" $dryrun
-			if [ $auto_increment -eq 1 -a $last_id -eq 0 ]
+			if [ $error -eq 0 -a $auto_increment -eq 1 ]
 			then
-				display "$last_id: cannot insert a value in AUTO_INCREMENT column" 1
-				return
+				[ "$last_aitable" != "$db.$table" ] && last_last_id=0
+				if [ $last_id -eq $last_last_id ]
+				then
+					display "cannot insert a value in an AUTO_INCREMENT column" 1
+					return
+				fi
 			fi
 			rows_affected=$(cat $rows_tmpf)
 			[ $error -eq 0 ] && replace_rollback "$1" "${3,,}" $nocols >> $rollback_file
@@ -1194,6 +1204,8 @@ query_insert()
 	then
 		[ $rows_affected -eq 1 ] && display "AUTO-INC value assigned:  $last_id" 3 || display "AUTO-INC values assigned:  $last_id to $((last_id + rows_affected * autoinc_inc - autoinc_inc))" 3
 	fi
+	last_last_id=$last_id
+	last_aitable=$db.$table
 }
 
 get_columns()
@@ -1469,6 +1481,11 @@ process_query() {
 	q_nb=$(echo "$1" | sed -e "s/^ *//")
 	IFS=" " q=($q_nb)
 	display "----- Processing query #$2 ------" 2
+	if [ ${#1} -gt $MAX_QUERY_SIZE ]
+	then
+		display "Query too large, maximum allowed query size is  $MAX_QUERY_SIZE. Needs splitted." 1
+		return
+	fi
 	rn=$(date "+%Y-%m-%d %H:%M:%S.%3N")
 	mysql_debug "($ticket)>-- Query #$2 @ $rn"
 	dq="${q[@]}"
@@ -1499,7 +1516,7 @@ process_query() {
 		'set') 
 			query_set "$qte" "$2"
 			;;
-		*) display "Syntax error near \"${q[0]}\"" 1
+		*) display "Syntax error (unknown) near \"${q[0]}\"" 1
 			total_errors=$((total_errors+1))
 			;;
 	esac
