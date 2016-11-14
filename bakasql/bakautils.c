@@ -370,6 +370,7 @@ char **argv;
 	char *b, *p, *r;
 	unsigned char sc;
 	int idx = -1;
+	int qo = 0;
 
 	if (argc < 3)  {
 		fprintf(stderr, "%s: not enough arguments\n", argv[1]);
@@ -384,7 +385,13 @@ char **argv;
 			case 0x0a:
 				sc = *p;
 				*p = 0x00;
-				if (!u_blank_string(b)) {
+				if (u_quote_open(b)) {
+					if (qo)
+						qo=0;
+					else
+						qo=1;
+				}
+				if (!qo && !u_blank_string(b)) {
 					if (u_check_if_match(b, argv[3], NULL, 0)) {
 						printf("%d\n", idx);
 						return;
@@ -396,7 +403,13 @@ char **argv;
 				break;
 		}
 	}
-	if (!u_blank_string(b)) {
+	if (u_quote_open(b)) {
+		if (qo)
+			qo=0;
+		else
+			qo=1;
+	}
+	if (!qo && !u_blank_string(b)) {
 		if (u_check_if_match(b, argv[3], NULL, 0)) {
 			printf("%d\n", idx);
 			return;
