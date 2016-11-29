@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.9.1"
+VERSION="1.9.2"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -105,7 +105,8 @@ mysql_query()
 	skip=0
 	error=0
 	[ $speed_hacks -eq 0 ] && cq=$(echo ${thisquery,,} | iconv -c -f utf-8  | tr -d "\r\n\t") || cq=${thisquery,,}
-	qtype=${cq/%\ */}
+	ncq=${cq#"${cq%%[![:space:]]*}"}
+	qtype=${ncq/%\ */}
 	if [ "$2" != "" -a "$2" != "$(cat $cached_db_tmpf 2>/dev/null)" ] 
 	then
 		echo "use $2;"  >&${mysqlc[1]}
