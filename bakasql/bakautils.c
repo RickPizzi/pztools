@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <memory.h>
+#include "version.h"
 
 static void rollback_args();
 static void get_columns();
@@ -30,8 +31,10 @@ main(argc, argv)
 int argc;
 char **argv;
 {
-	if (argc < 2)
+	if (argc < 2) {
+		printf("bakautils package for BakaSQL %s\n", VERSION);
 		exit(0);
+	}
 	if (!strcmp(argv[1], "rollback_args")) {
 		rollback_args(argc, argv);
 		exit(0);

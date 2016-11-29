@@ -28,6 +28,12 @@ set @myvar3 =  (select 666);
 insert into t1 (val) values (@myvar1);
 insert into t1 (val) values (@last_insert_id), (@myvar2), (@myvar3);
 
+Advanced options:
+
+- speed hacks enables some... speed hacks, at the expense of some features; namely, variables are not substituted, UTF-8 invalid chars are not filtered out, and output will be terse (so it will be harder to locate the row with the error, although still possible)
+- periodic commit will commit the transation periodically every N statements, this can be used for very large transactions (eg large number of identical updates) - normally shouldn't be used, as in this case, the all-or-nothing modification is not enforced
+
+ 
 
 Feedbacks welcome!
 Enjoy

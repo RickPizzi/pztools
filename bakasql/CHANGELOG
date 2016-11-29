@@ -1,0 +1,5 @@
+1.9
+
+- major code overhaul in order to improve speed, this version is at least 3x faster than 1.8
+- speed hack option (under advanced options) to gain even more speed (up to 5x for updates) - see README
+- periodic commit (under advanced options) to commit in the middle, every N statements (useful to reduce transaction size)

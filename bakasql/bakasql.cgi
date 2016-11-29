@@ -1,24 +1,25 @@
 #!/bin/bash
 #
 #	BakaSQL (formerly web query executor )
-#	riccardo.pizzi@rumbo.com Jan 2015
+#	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.8.29"
+VERSION="1.9.1"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
-BAKA_USER="bakasql"
-BAKA_PASSWORD="BakaBaka"
-BAKA_HOST="10.10.2.145"
-BAKA_DB="bakasql"
 MAX_QUERY_SIZE=65535
 BAKAUTILS=$BASE/sbin/bakautils
 #
 set -f
 post=0
+post_error=0
 dryrun=0
+skip_checks=0
 db=""
 kill_backq=0
+speed_hacks=0
+periodic_commit=0
+commit_interval=1000
 ninja=0
 enable_ninja=0
 default_db=""
@@ -38,7 +39,9 @@ vars_tmpf=/tmp/bakasql.vars.$$
 cmlog_tmpf=/tmp/bakasql.cmlog.$$
 totcnt_tmpf=/tmp/bakasql.totcnt.$$
 cardinfo_tmpf=/tmp/bakasql.crdinf.$$
-trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf $vars_tmpf $cmlog_tmpf $totcnt_tmpf $cardinfo_tmpf' 0
+resultset_tmpf=/tmp/bakasql.result.$$
+w_resultset_tmpf=/tmp/bakasql.wresult.$$
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf $vars_tmpf $cmlog_tmpf $totcnt_tmpf $cardinfo_tmpf $resultset_tmpf $w_resultset_tmpf' 0
 
 unescape_input()
 {
@@ -85,23 +88,6 @@ mysql_debug()
 	echo "$1" >> $BASE/log/mysql_debug.log
 }
 
-add_debug()
-{
-	return
-	echo case $1: $(echo "$row" | tr -d "\n\r") >> $BASE/log/mysql_debug.log
-}
-
-profile_in()
-{
-	pt=$(date +%s%N)
-}
-
-profile_out()
-{
-	[ $dryrun -eq 1 ] && return
-	echo "insert into profiling values (NULL, '$ticket', '$1', SEC_TO_TIME(ROUND(($(date +%s%N) -$pt)/1000000000,6)))" | mysql -A -u$BAKA_USER -h$BAKA_HOST -p$BAKA_PASSWORD $BAKA_DB 2>/dev/null  1>&2
-}
-
 connection_setup()
 {
 	coproc mysqlc { stdbuf -oL mysql -ANnfrvv -u "$user" -p"$password" -h "$host" "$default_db" 2>&1; } 
@@ -114,16 +100,13 @@ connection_setup()
 
 mysql_query()
 {
-	sw=0
 	rm -f $errors_tmpf
- 	thisquery=$(echo "$1" | sed -e "s/^ *//g")
-	[ "${1,,}" == "show warnings" ] && sw=1
+	thisquery="${1/# /}"
 	skip=0
 	error=0
-	warning_text=""
-	cq=$(echo ${thisquery,,} | iconv -c -f utf-8  | tr -d "\r\n\t")
-	qtype=$(echo $cq | cut -d" " -f 1)
-	if [ $sw -eq 0 -a "$2" != "" -a "$2" != "$(cat $cached_db_tmpf 2>/dev/null)" ] 
+	[ $speed_hacks -eq 0 ] && cq=$(echo ${thisquery,,} | iconv -c -f utf-8  | tr -d "\r\n\t") || cq=${thisquery,,}
+	qtype=${cq/%\ */}
+	if [ "$2" != "" -a "$2" != "$(cat $cached_db_tmpf 2>/dev/null)" ] 
 	then
 		echo "use $2;"  >&${mysqlc[1]}
 		mysql_debug "($ticket)>use $2;"
@@ -135,56 +118,39 @@ mysql_query()
 	do
 		if [ "$row" = "--------------" ]
 		then
-			case $skip in
-				0) skip=1;;
-				1) skip=0;;
-			esac
+			[ $skip -eq 0 ] && skip=1 || skip=0
 			continue
 		fi
 		[ $skip -eq 1 ] && continue
 		[ "$row" = "" ] && continue
-		case $sw in
-			0)
-				case "$qtype" in
-					'use')
-							add_debug "use ($qtype)"
-							echo "$row"
-							mysql_debug "($ticket)<$row"
-							[[ $row == *"Database changed"* ]] && break
-							;;
-					'update')
-							add_debug "update ($qtype)"
-							echo "$row"
-							mysql_debug "($ticket)<$row"
-							[[ $row == *"Rows matched:"* ]] && break
-							;;
-					'select'|'show')
-							add_debug "select or show ($qtype)"
-							[[ $row == *"Empty set"* ]] && break
-							[[ $row == *"row"*"in set"* ]] && break
-							[[ $row == "ERROR "* ]] && break
-							echo "$row"
-							mysql_debug "($ticket)<$row"
-							;;
-					*)
-							add_debug "default ($qtype)"
-							[[ $row == "ERROR "* ]] && break
-							echo "$row"
-							mysql_debug "($ticket)<$row"
-							if [[ $row == *"row"*"affected"* ]]
-							then 
-								echo "$row" | cut -d " " -f 3 > $rows_tmpf
-								break
-							fi
-							;;
-				esac
-				;;
-			1)
-				[[ $row == *"Empty set"* ]] && break
-				[[ $row == *"row"*"in set"* ]] && break
-				echo "$row"
-				mysql_debug "($ticket)<$row"
-				;;
+		case "$qtype" in
+			'use')
+					echo "$row"
+					mysql_debug "($ticket)<$row"
+					[[ $row == *"Database changed"* ]] && break
+					;;
+			'update')
+					echo "$row"
+					mysql_debug "($ticket)<$row"
+					[[ $row == *"Rows matched:"* ]] && break
+					;;
+			'select'|'show')
+					[[ $row == *"Empty set"* ]] && break
+					[[ $row == *"row"*"in set"* ]] && break
+					[[ $row == "ERROR "* ]] && break
+					echo "$row"
+					mysql_debug "($ticket)<$row"
+					;;
+			*)
+					[[ $row == "ERROR "* ]] && break
+					echo "$row"
+					mysql_debug "($ticket)<$row"
+					if [[ $row == *"row"*"affected"* ]]
+					then 
+						echo "$row" | cut -d " " -f 3 > $rows_tmpf
+						break
+					fi
+					;;
 		esac
 		[[ $row == "ERROR "* ]] && break
 	done
@@ -195,19 +161,35 @@ mysql_query()
 		error=1
 		return
 	fi
-	if [ $sw -eq 0 -a $error -eq 0 ]
-	then
-		case "$qtype" in
-			'begin'|'use'|'show'|'select'|'set'|'commit'|'rollback'|'create')
-				;;
-			*)
-				qtypebuf="$qtype"
-				warning_text=$(mysql_query "SHOW WARNINGS")
-				echo $warning_text | grep -v ^Records > $warnings_tmpf
-				qtype="$qtypebuf"
-				;;
-		esac
-	fi
+	case "$qtype" in
+		'begin'|'use'|'show'|'select'|'set'|'commit'|'rollback'|'create')
+			;;
+		*)
+			show_warnings > $w_resultset_tmpf
+			grep -v ^Records $w_resultset_tmpf > $warnings_tmpf
+			;;
+	esac
+}
+
+show_warnings()
+{
+	skip=0
+	echo "show warnings;" >&${mysqlc[1]}
+	mysql_debug "($ticket)>show warnings;"
+	while read -t 15 -u ${mysqlc[0]} row
+	do
+		if [ "$row" = "--------------" ]
+		then
+			[ $skip -eq 0 ] && skip=1 || skip=0
+			continue
+		fi
+		[ $skip -eq 1 ] && continue
+		[ "$row" = "" ] && continue
+		[[ $row == *"Empty set"* ]] && break
+		[[ $row == *"row"*"in set"* ]] && break
+		echo "$row"
+		mysql_debug "($ticket)<$row"
+	done
 }
 
 delete_rollback ()
@@ -299,6 +281,10 @@ page_style()
     	printf "\tdocument.getElementById(\"progressbar\").style.width=percent+'%%';\n"
     	printf "\tdocument.getElementById(\"percent\").innerHTML='Progress: ' + percent+'%%';\n"
 	printf "}\n"
+	printf "function adv_options() {\n"
+	printf "\tel = document.getElementById(\"adv\");\n"
+	printf "\tel.style.display = (el.style.display == \"block\") ? \"none\" : \"block\";\n"
+	printf "}\n"
 	printf "</script>\n"
 	printf "</head>\n"
 }
@@ -344,10 +330,20 @@ show_form()
 	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$default_db\" MAXLENGTH=32 SIZE=32></TD></TR>\n"
 	printf "<TR><TD>Ticket #:</TD><TD><INPUT TYPE=TEXT NAME=\"ticket\" VALUE=\"$ticket\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>Remove backquotes:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"backq\"></TD></TR>\n" 
+	printf "<TR><TD COLSPAN=2><FONT SIZE=1><A HREF=\"#\" onclick=\"adv_options();\">advanced options</A></FONT></TD><TR>\n"
+	printf "<TR><TD COLSPAN=2>\n"
+	printf "<DIV ID=\"adv\" STYLE=\"display:none\">\n"
+	printf "<FONT SIZE=2><BR>WARNING: do not use these features unless you know how they work!<BR>\n"
+	printf "Enable speed hacks: &nbsp;<INPUT TYPE=CHECKBOX NAME=\"hacks\"><BR>\n" 
+	printf "Enable periodic commit: &nbsp;<INPUT TYPE=CHECKBOX NAME=\"commit\"><BR>\n" 
+	printf "Commit interval: &nbsp;<INPUT TYPE=TEXT NAME=\"commit_intv\" MAXLENGTH=5 SIZE=5 VALUE=\"$commit_interval\">\n" 
+	printf "</FONT><BR><BR>\n"
+	printf "</DIV>\n"
+	printf "</TD></TR>\n"
 	[ $dryrun -eq 1 ] && textarea=$(escape_html "$(unescape_textarea $query)")
 	printf "<TR><TD COLSPAN=2><TEXTAREA NAME=\"query\" ROWS=8 COLS=200>%s</TEXTAREA></TD></TR>\n" "$textarea"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
-	printf "<TR><TD COLSPAN=2><B><PRE>%s</PRE></B></TD></TR>\n" "$(cat $output_tmpf)"
+	printf "<TR><TD COLSPAN=2><B><PRE>%s</PRE></B></TD></TR>\n" "$(cat $output_tmpf 2>/dev/null)"
 	printf "<TR><TD COLSPAN=2>&nbsp;</TD></TR>\n"
 	[ $dryrun -eq 1 ] && checkbox="CHECKED"
 	printf "<TR><TD>Dry Run:</TD><TD ALIGN=LEFT><INPUT TYPE=CHECKBOX NAME=\"dryrun\" VALUE=\"on\" %s></TD></TR>\n" "$checkbox"
@@ -438,8 +434,9 @@ post_checks()
 run_statement()
 {
 	error=0
-	result=$(mysql_query "$1" "$db")
-	warning_text=$(cat $warnings_tmpf)
+	mysql_query "$1" "$db" > $resultset_tmpf
+	result=$(cat $resultset_tmpf)
+	warning_text=$(cat $warnings_tmpf 2>/dev/null)
 	error_text=$(cat $errors_tmpf 2>/dev/null)
 	[ "$warning_text" != "" ] && total_warnings=$((total_warnings+1))
 	if [ "$error_text" != "" ]
@@ -447,7 +444,7 @@ run_statement()
 		error=1
 		total_errors=$((total_errors+1))
 	fi
-	case $(echo ${1,,} | cut -d" " -f 1) in
+	case ${q[0],,} in
 		'insert'|'replace') 
 			if [ $auto_increment -eq 1 ]
 			then
@@ -1215,49 +1212,54 @@ get_columns()
 
 query_update()
 {
+	fgp=$(echo "$1" | sed -E  -e "s/^ +//g" -e ':l' -e "s/^(.*)'([^a])*'(.*)$/\1?\3/g" -e "s/= ?[0-9]+/= '?'/g" -e 't l')
+	[ $total_errors -eq 0 -a "$fgp" = "$old_fgp" ] && skip_checks=1 || skip_checks=0
 	total_errors=$((total_errors+1))
-	display "Query type: UPDATE" 0
+	[ $speed_hacks -eq 0 ] && display "Query type: UPDATE" 0
 	IFS=" " q=($1)
 	query_id=$2
 	table="${q[1]}"
-	if [ "${q[2],,}" != "set" ]
+	if [ $skip_checks -eq 0 ]
 	then
-		display "Syntax error near \"${q[2]}\"" 1
-		return
-	fi
-	check_table_presence
-	[ $table_present -ne 1 ] && return
-	qon=0
-	c=0
-	w=0
-	dml=""
-	for arg in ${q[@]}
-	do
-		qcnt=$(echo $arg | tr -dc "'" | wc -c)
-		if [ $((qcnt%2)) -eq 1 ]
+		if [ "${q[2],,}" != "set" ]
 		then
-			[ $qon -eq 0 ] && qon=1 || qon=0
+			display "Syntax error near \"${q[2]}\"" 1
+			return
 		fi
-		if [ $qon -eq 0 ]
+		check_table_presence
+		[ $table_present -ne 1 ] && return
+		qon=0
+		c=0
+		w=0
+		dml=""
+		for arg in ${q[@]}
+		do
+			qcnt=$(echo $arg | tr -dc "'" | wc -c)
+			if [ $((qcnt%2)) -eq 1 ]
+			then
+				[ $qon -eq 0 ] && qon=1 || qon=0
+			fi
+			if [ $qon -eq 0 ]
+			then
+				case "${arg,,}" in
+					'where')
+						w=$c
+						break
+						;;
+					'and') 
+						display "Syntax error near \"$arg\"" 1
+						return
+						;;
+				esac
+			fi
+			[ $c -ge 3 ] && dml="$dml $arg"
+			c=$((c + 1))
+		done
+		if [ $w -eq 0 ]
 		then
-			case "${arg,,}" in
-				'where')
-					w=$c
-					break
-					;;
-				'and') 
-					display "Syntax error near \"$arg\"" 1
-					return
-					;;
-			esac
+			display "UPDATE without WHERE is not allowed" 1
+			return
 		fi
-		[ $c -ge 3 ] && dml="$dml $arg"
-		c=$((c + 1))
-	done
-	if [ $w -eq 0 ]
-	then
-		display "UPDATE without WHERE is not allowed" 1
-		return
 	fi
 	c=0
 	where=""
@@ -1269,62 +1271,74 @@ query_update()
 		fi
 		c=$(($c + 1))
 	done
-	get_columns "$dml"
-	check_columns "$cols"
-	[ $columns_ok -eq 0 ] && return
-	display "Schema: $db" 0
-	display "Table: $table" 0
-	d_text=$(escape_html "$dml")
-	whd=$(pretty_print "$d_text")
-	display "Set: $whd" 0
-	whd=$(pretty_print "$where")
-	display "WHERE condition: \"$whd\"" 0
-	if [ $(array_idx "$where" "&&") -ge 0 ]
+	if [ $skip_checks -eq 0 ]
 	then
-		display "'&&' operator is not supported, please use 'AND'" 1
-		return
+		get_columns "$dml"
+		check_columns "$cols"
+		[ $columns_ok -eq 0 ] && return
 	fi
-	if [ $(array_idx "$where" "||") -ge 0 ]
+	if [ $speed_hacks -eq 0 ]
 	then
-		display "'||' operator is not supported, please use 'OR'" 1
-		return
+		display "Schema: $db" 0
+		display "Table: $table" 0
+		d_text=$(escape_html "$dml")
+		whd=$(pretty_print "$d_text")
+		display "Set: $whd" 0
+		whd=$(pretty_print "$where")
+		display "WHERE condition: \"$whd\"" 0
 	fi
-	if [ $(array_idx "$where" "or") -ge 0 ]
+	if [ $skip_checks -eq 0 ]
 	then
-		display "OR condition in WHERE is not supported" 1
-		return
-	fi
-	notsrch=$(array_idx "$where" "not")
-	if [ $notsrch -ge 0 ]
-	then
-		nullsrch=$(array_idx "$where" "null")
-		nullsrch=$((nullsrch - 1))
-		if [ $nullsrch -ne $notsrch ]
+		if [ $(array_idx "$where" "&&") -ge 0 ]
 		then
-			display "NOT condition in WHERE is not supported as indexes would not be used" 1
+			display "'&&' operator is not supported, please use 'AND'" 1
 			return
 		fi
-	fi
-	index_in_use "$where"
-	[ $columns_check -eq 0 ] && return
-	if [ $using_index -eq 0 ]
-	then
-		display "we couldn't find any usable index to satisfy WHERE condition" 1
-		return
+		if [ $(array_idx "$where" "||") -ge 0 ]
+		then
+			display "'||' operator is not supported, please use 'OR'" 1
+			return
+		fi
+		if [ $(array_idx "$where" "or") -ge 0 ]
+		then
+			display "OR condition in WHERE is not supported" 1
+			return
+		fi
+		notsrch=$(array_idx "$where" "not")
+		if [ $notsrch -ge 0 ]
+		then
+			nullsrch=$(array_idx "$where" "null")
+			nullsrch=$((nullsrch - 1))
+			if [ $nullsrch -ne $notsrch ]
+			then
+				display "NOT condition in WHERE is not supported as indexes would not be used" 1
+				return
+			fi
+		fi
+		index_in_use "$where"
+		[ $columns_check -eq 0 ] && return
+		if [ $using_index -eq 0 ]
+		then
+			display "BakaSQL couldn't find any usable index to satisfy WHERE condition" 1
+			return
+		fi
 	fi
 	rollback=0
 	wa=($(echo "$where" | sed -e "s/, /,/g"))
 	get_pk $db $table
 	pkc=$(echo $pk | wc -w)
-	pkwa=0
-	check_pk_use "$where" $pkc
-	if [ $pk_in_use -eq 0 ]
+	if [ $skip_checks -eq 0 ]
 	then
-		display "NOTICE: WHERE condition not using PK, switching to PK for safe rollback" 0
-		pkwa=1
+		pkwa=0
+		check_pk_use "$where" $pkc
+		if [ $pk_in_use -eq 0 ]
+		then
+			display "NOTICE: WHERE condition not using PK, switching to PK for safe rollback" 0
+			pkwa=1
+		fi
 	fi
-	in=$(array_idx "$where" "in")
-	if [ $in -ge 0 ]
+	[ $skip_checks -eq 0 ] && where_in=$(array_idx "$where" "in")
+	if [ $where_in -ge 0 ]
 	then
 		if [ $(echo $where | fgrep -c "=") -ne 0 ]
 		then
@@ -1333,10 +1347,10 @@ query_update()
 		fi
 		if [ $(echo $where | fgrep -ic " and ") -ne 0 ]
 		then
-			display "Sorry, BakaSQK does not support WHERE conditions with multiple IN()s at this time" 1
+			display "Sorry, BakaSQL does not support WHERE conditions with multiple IN()s at this time" 1
 			return
 		fi
-		c=$(($in + 1))
+		c=$(($where_in + 1))
 		IFS="," in_set=($(echo "${wa[@]:$c}" | tr -d "() " | sed -e "s/^ *//g" -e "s/ *$//g"))
 		#
 		#	WHERE key IN (....)
@@ -1406,22 +1420,22 @@ query_update()
 				IFS="$saveIFS"
 			fi
 		else
-			count=$(mysql_query "SELECT COUNT(*) FROM $table WHERE $where /* update 8 */" "$db")
+			[ $pk_in_use -eq 0 ] && count=$(mysql_query "SELECT COUNT(*) FROM $table WHERE $where /* update 8 */" "$db") || count=1
 			if [ $count -gt 1 ]
 			then
 				# assumes small table, add a check
 				rollback=1
 				delete_rollback  "$db" "$table" "$where" 1 >> $rollback_file
 			else
-				rbs=$(rollback_args "$cols")
-				res=$(mysql_query "SELECT $rbs FROM $table WHERE $where /* update 9 */" "$db")
-				res=$(echo "$res" | sed -e "s/'NULL'/NULL/g")
+				[ $skip_checks -eq 0 ] && rbs=$(rollback_args "$cols")
+				mysql_query "SELECT $rbs FROM $table WHERE $where /* update 9 */" "$db" > $resultset_tmpf
+				res=$(sed -e "s/'NULL'/NULL/g" $resultset_tmpf)
 				if [ "$res" != "" ]
 				then
 					rollback=1
 					# check special case where one of cols being updated is also in where clause
 					amr=0
-					if [ $pk_in_use -eq 1 ]
+					if [ $skip_checks -eq 0 -a $pk_in_use -eq 1 ]
 					then
 						for uciw in $cols
 						do
@@ -1447,6 +1461,7 @@ query_update()
 	fi
 	total_errors=$((total_errors-1))
 	run_statement "$1" $dryrun
+	old_fgp="$fgp"
 }
 
 show_rollback()
@@ -1461,14 +1476,6 @@ show_rollback()
 pretty_print()
 {
 	$BAKAUTILS pretty_print "$1" 2>>/tmp/bakautils.log
-}
-
-open_quotes()
-{
-	niq=$(echo "$1" | sed -e "s/\\\'//g")
-	# this triggers a bash bug in some circumstances... nniq=${niq//[^\']}
-	nniq=$(echo "$niq" | tr -dc "'")
-	echo $((${#nniq} % 2))
 }
 
 cm_log_q()
@@ -1486,14 +1493,19 @@ process_query() {
 		display "Query too large, maximum allowed query size is  $MAX_QUERY_SIZE. Needs splitted." 1
 		return
 	fi
-	rn=$(date "+%Y-%m-%d %H:%M:%S.%3N")
-	mysql_debug "($ticket)>-- Query #$2 @ $rn"
-	dq="${q[@]}"
-	dqq=$(pretty_print "$dq")
-	display "$dqq" 2
-	if [ "${q[0],,}" != "set" ]
+	if [ $speed_hacks -eq 0 ]
 	then
-		insert_vars "$1"
+		rn=$(date "+%Y-%m-%d %H:%M:%S.%3N")
+		mysql_debug "($ticket)>-- Query #$2 @ $rn"
+		dq="${q[@]}"
+		dqq=$(pretty_print "$dq")
+		display "$dqq" 2
+		if [ "${q[0],,}" != "set" ]
+		then
+			insert_vars "$1"
+		else
+			qte="$1"
+		fi
 	else
 		qte="$1"
 	fi
@@ -1516,7 +1528,7 @@ process_query() {
 		'set') 
 			query_set "$qte" "$2"
 			;;
-		*) display "Syntax error (unknown) near \"${q[0]}\"" 1
+		*) display "Syntax error near \"${q[0]}\"" 1
 			total_errors=$((total_errors+1))
 			;;
 	esac
@@ -1529,10 +1541,17 @@ total_query_count()
 	total_queries=$($BAKAUTILS total_query_count $totcnt_tmpf  2>>/tmp/bakautils.log)
 }
 
+advanced_options_toggle()
+{
+	printf "<script type=\"text/javascript\">\n"
+	printf "adv_options();\n"
+	printf "</script>\n"
+}
+
 progress_bar_visibility_toggle()
 {
 	printf "<script type=\"text/javascript\">\n"
-	printf "overlay();\n" $perc
+	printf "overlay();\n"
 	printf "</script>\n"
 }
 
@@ -1609,6 +1628,13 @@ then
 			'backq') kill_backq=0
 				[ "$value" = "on" ] && kill_backq=1
 				;;
+			'hacks') speed_hacks=0
+				[ "$value" = "on" ] && speed_hacks=1
+				;;
+			'commit') periodic_commit=0
+				[ "$value" = "on" ] && periodic_commit=1
+				;;
+			'commit_intv') commit_interval="$value";;
 			'ninja') 
 				[ "$value" = "on" ] && ninja=1
 				;;
@@ -1657,7 +1683,8 @@ then
 				display "<div id=\"clip_area\">" 0
 				for q in $(unescape_execute "$query")
 				do
-					if [ $(open_quotes "$q") -eq 1 ]
+					nniq=$(echo "$q" | sed -e "s/\\\'//g" | tr -dc "'")
+					if [ $((${#nniq} % 2)) -eq 1 ]
 					then
 						if [ $qo -eq 0 ]
 						then
@@ -1681,9 +1708,22 @@ then
 					qc=$(($qc + 1))
 					progress_bar $qc
 					process_query "$q" $qc
+					if [ $dryrun -eq 0 -a $periodic_commit -eq 1 -a $commit_interval -gt 0 ]
+					then
+						if [ $((qc % commit_interval)) -eq 0 ]
+						then
+							if [ $total_errors -eq 0 -a $total_warnings -eq 0 ]
+							then 
+								mysql_query "COMMIT" > /dev/null
+								echo "COMMIT;" >> $rollback_file
+								mysql_query "BEGIN" > /dev/null
+								echo "BEGIN;" >> $rollback_file
+							fi
+						fi
+					fi
 				done
 				progress_bar_dismiss
-				echo "COMMIT;" >> $rollback_file
+				[ $total_errors -eq 0 -a $total_warnings -eq 0 ] &&  echo "COMMIT;" >> $rollback_file || echo "ROLLBACK;" >> $rollback_file
 			fi
 			if [ $dryrun -eq 1 ]
 			then
