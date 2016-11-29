@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.9.2"
+VERSION="1.9.3"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -688,6 +688,7 @@ replace_rollback()
 
 get_pk()
 {
+	display "DEBUG: get_pk(): $1 $2" 0
 	[ "$pk_cache" = "$1.$2" ] && return
 	rs=$(mysql_query "SHOW INDEX FROM $1.$2 WHERE KEY_NAME = 'PRIMARY'" "$1")
 	pk=$(echo "$rs" | cut -f 5 | tr "\n" " " | sed -e "s/ $//g")
@@ -1219,7 +1220,6 @@ query_update()
 	[ $speed_hacks -eq 0 ] && display "Query type: UPDATE" 0
 	IFS=" " q=($1)
 	query_id=$2
-	table="${q[1]}"
 	if [ $skip_checks -eq 0 ]
 	then
 		if [ "${q[2],,}" != "set" ]
@@ -1227,6 +1227,7 @@ query_update()
 			display "Syntax error near \"${q[2]}\"" 1
 			return
 		fi
+		table="${q[1]}"
 		check_table_presence
 		[ $table_present -ne 1 ] && return
 		qon=0
