@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.9.3"
+VERSION="1.9.11"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -40,8 +40,10 @@ cmlog_tmpf=/tmp/bakasql.cmlog.$$
 totcnt_tmpf=/tmp/bakasql.totcnt.$$
 cardinfo_tmpf=/tmp/bakasql.crdinf.$$
 resultset_tmpf=/tmp/bakasql.result.$$
+resultset2_tmpf=/tmp/bakasql.result2.$$
 w_resultset_tmpf=/tmp/bakasql.wresult.$$
-trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf $vars_tmpf $cmlog_tmpf $totcnt_tmpf $cardinfo_tmpf $resultset_tmpf $w_resultset_tmpf' 0
+query_tmpf=/tmp/bakasql.query.$$
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf $vars_tmpf $cmlog_tmpf $totcnt_tmpf $cardinfo_tmpf $resultset_tmpf $w_resultset_tmpf $resultset2_tmpf $query_tmpf' 0
 
 unescape_input()
 {
@@ -115,50 +117,50 @@ mysql_query()
 	fi
 	echo "$thisquery;" >&${mysqlc[1]}
 	mysql_debug "($ticket)>$thisquery;"
-	while read -t 15 -u ${mysqlc[0]} row
+	while read -rt 15 -u ${mysqlc[0]} myrow
 	do
-		if [ "$row" = "--------------" ]
+		if [ "$myrow" = "--------------" ]
 		then
 			[ $skip -eq 0 ] && skip=1 || skip=0
 			continue
 		fi
 		[ $skip -eq 1 ] && continue
-		[ "$row" = "" ] && continue
+		[ "$myrow" = "" ] && continue
 		case "$qtype" in
 			'use')
-					echo "$row"
-					mysql_debug "($ticket)<$row"
-					[[ $row == *"Database changed"* ]] && break
+					echo "$myrow"
+					mysql_debug "($ticket)<$myrow"
+					[[ $myrow == *"Database changed"* ]] && break
 					;;
 			'update')
-					echo "$row"
-					mysql_debug "($ticket)<$row"
-					[[ $row == *"Rows matched:"* ]] && break
+					echo "$myrow"
+					mysql_debug "($ticket)<$myrow"
+					[[ $myrow == *"Rows matched:"* ]] && break
 					;;
 			'select'|'show')
-					[[ $row == *"Empty set"* ]] && break
-					[[ $row == *"row"*"in set"* ]] && break
-					[[ $row == "ERROR "* ]] && break
-					echo "$row"
-					mysql_debug "($ticket)<$row"
+					[[ $myrow == *"Empty set"* ]] && break
+					[[ $myrow == *"row"*"in set"* ]] && break
+					[[ $myrow == "ERROR "* ]] && break
+					echo "$myrow"
+					mysql_debug "($ticket)<$myrow"
 					;;
 			*)
-					[[ $row == "ERROR "* ]] && break
-					echo "$row"
-					mysql_debug "($ticket)<$row"
-					if [[ $row == *"row"*"affected"* ]]
+					[[ $myrow == "ERROR "* ]] && break
+					echo "$myrow"
+					mysql_debug "($ticket)<$myrow"
+					if [[ $myrow == *"row"*"affected"* ]]
 					then 
-						echo "$row" | cut -d " " -f 3 > $rows_tmpf
+						echo "$myrow" | cut -d " " -f 3 > $rows_tmpf
 						break
 					fi
 					;;
 		esac
-		[[ $row == "ERROR "* ]] && break
+		[[ $myrow == "ERROR "* ]] && break
 	done
-	if [[ $row == "ERROR "* ]]
+	if [[ $myrow == "ERROR "* ]]
 	then
-		mysql_debug "($ticket)<$row"
-		echo "$row" > $errors_tmpf
+		mysql_debug "($ticket)<$myrow"
+		echo "$myrow" > $errors_tmpf
 		error=1
 		return
 	fi
@@ -177,19 +179,19 @@ show_warnings()
 	skip=0
 	echo "show warnings;" >&${mysqlc[1]}
 	mysql_debug "($ticket)>show warnings;"
-	while read -t 15 -u ${mysqlc[0]} row
+	while read -rt 15 -u ${mysqlc[0]} myrow
 	do
-		if [ "$row" = "--------------" ]
+		if [ "$myrow" = "--------------" ]
 		then
 			[ $skip -eq 0 ] && skip=1 || skip=0
 			continue
 		fi
 		[ $skip -eq 1 ] && continue
-		[ "$row" = "" ] && continue
-		[[ $row == *"Empty set"* ]] && break
-		[[ $row == *"row"*"in set"* ]] && break
-		echo "$row"
-		mysql_debug "($ticket)<$row"
+		[ "$myrow" = "" ] && continue
+		[[ $myrow == *"Empty set"* ]] && break
+		[[ $myrow == *"row"*"in set"* ]] && break
+		echo "$myrow"
+		mysql_debug "($ticket)<$myrow"
 	done
 }
 
@@ -445,19 +447,6 @@ run_statement()
 		error=1
 		total_errors=$((total_errors+1))
 	fi
-	case ${q[0],,} in
-		'insert'|'replace') 
-			if [ $auto_increment -eq 1 ]
-			then
- 				q_last_id=$(mysql_query "SELECT LAST_INSERT_ID()") 
-			else
-				q_last_id=0
-			fi
-			;;
-		*)
-			q_last_id=0
-			;;
-	esac	
 	if [ $error -eq 1 ]
 	then
 		case $2 in
@@ -471,6 +460,20 @@ run_statement()
 				
 		esac
 	else
+		case ${q[0],,} in
+			'insert'|'replace') 
+				if [ $auto_increment -eq 1 ]
+				then
+ 					mysql_query "SELECT LAST_INSERT_ID()" > $resultset_tmpf
+ 					q_last_id=$(cat $resultset_tmpf)
+				else
+					q_last_id=0
+				fi
+				;;
+			*)
+				q_last_id=0
+				;;
+		esac	
 		last_id=$q_last_id
 		case $2 in
 			0)	display "$result" 2
@@ -688,7 +691,6 @@ replace_rollback()
 
 get_pk()
 {
-	display "DEBUG: get_pk(): $1 $2" 0
 	[ "$pk_cache" = "$1.$2" ] && return
 	rs=$(mysql_query "SHOW INDEX FROM $1.$2 WHERE KEY_NAME = 'PRIMARY'" "$1")
 	pk=$(echo "$rs" | cut -f 5 | tr "\n" " " | sed -e "s/ $//g")
@@ -1215,7 +1217,7 @@ get_columns()
 query_update()
 {
 	fgp=$(echo "$1" | sed -E  -e "s/^ +//g" -e ':l' -e "s/^(.*)'([^a])*'(.*)$/\1?\3/g" -e "s/= ?[0-9]+/= '?'/g" -e 't l')
-	[ $total_errors -eq 0 -a "$fgp" = "$old_fgp" ] && skip_checks=1 || skip_checks=0
+	[ $total_errors -eq 0 -a "$fgp" = "$update_old_fgp" ] && skip_checks=1 || skip_checks=0
 	total_errors=$((total_errors+1))
 	[ $speed_hacks -eq 0 ] && display "Query type: UPDATE" 0
 	IFS=" " q=($1)
@@ -1245,7 +1247,7 @@ query_update()
 			then
 				case "${arg,,}" in
 					'where')
-						w=$c
+						w=$((c+1))
 						break
 						;;
 					'and') 
@@ -1264,15 +1266,8 @@ query_update()
 		fi
 	fi
 	c=0
-	where=""
-	for arg in ${q[@]}
-	do
-		if [ $c -gt $w ]
-		then
-			where="$where $arg"
-		fi
-		c=$(($c + 1))
-	done
+	wn=$((${#q[@]}-1))
+	where=${q[@]:$w:$((${#q[@]}-1))}
 	if [ $skip_checks -eq 0 ]
 	then
 		get_columns "$dml"
@@ -1363,7 +1358,9 @@ query_update()
 		do
 			saveIFS="$IFS"
 			IFS=" "
-			rbs=$(rollback_args "$cols")
+			#rbs=$(rollback_args "$cols")
+			rollback_args "$cols" > $resultset_tmpf
+			rbs=$(cat $resultset_tmpf)
 			IFS="$saveIFS"
 			naked_arg=$(echo $arg | tr -d "'")
 			if [ $pkwa -eq 1 ]
@@ -1372,23 +1369,29 @@ query_update()
 				if [ $pkc -gt 1 ]
 				then
 					IFS=" "
-					rbw=$(rollback_pkwhere "$pk")
+					#rbw=$(rollback_pkwhere "$pk")
+					rollback_pkwhere "$pk" > $resultset_tmpf
+					rbw=$(cat $resultset_tmpf)
 					IFS="$saveIFS"
 					mysql_query "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE ${wa[0]}='$naked_arg' /* update 1 */" "$db" >> $rollback_file
 				else
 					IFS="
 "
-					for row in $(mysql_query "SELECT $pk FROM $table WHERE ${wa[0]}='$naked_arg' /* update 2 */" "$db")
+					#for row in $(mysql_query "SELECT $pk FROM $table WHERE ${wa[0]}='$naked_arg' /* update 2 */" "$db")
+					mysql_query "SELECT $pk FROM $table WHERE ${wa[0]}='$naked_arg' /* update 2 */" "$db" > $resultset_tmpf
+					for row in $(cat $resultset_tmpf)
                                 	do
-                                        	res=$(mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 3 */" "$db")
-                                        	res=$(echo "$res" | sed -e "s/'NULL'/NULL/g")
+                                        	#res=$(mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 3 */" "$db")
+                                        	mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 3 */" "$db" > $resultset2_tmpf
+                                        	res=$(cat $resultset2_tmpf | sed -e "s/'NULL'/NULL/g")
                                         	echo "UPDATE $table SET $res WHERE $pk = '$row';" >> $rollback_file
                                 	done
 					IFS="$saveIFS"
 				fi
 			else
-				res=$(mysql_query "SELECT $rbs FROM $table WHERE ${wa[0]}='$naked_arg' /* update 4 */" "$db")
-				res=$(echo "$res" | sed -e "s/'NULL'/NULL/g")
+				#res=$(mysql_query "SELECT $rbs FROM $table WHERE ${wa[0]}='$naked_arg' /* update 4 */" "$db")
+				mysql_query "SELECT $rbs FROM $table WHERE ${wa[0]}='$naked_arg' /* update 4 */" "$db" > $resultset_tmpf
+				res=$(cat $resultset_tmpf | sed -e "s/'NULL'/NULL/g")
 				if [ "$res" != "" ]
 				then
 					rollback=1
@@ -1404,32 +1407,51 @@ query_update()
 		[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 		if [ $pkwa -eq 1 ]
 		then
-			rbs=$(rollback_args "$cols")
+			#rbs=$(rollback_args "$cols")
+			rollback_args "$cols" > $resultset_tmpf
+			rbs=$(cat $resultset_tmpf)
 			if [ $pkc -gt 1 ]
 			then
-				rbw=$(rollback_pkwhere "$pk")
+				#rbw=$(rollback_pkwhere "$pk")
+				rollback_pkwhere "$pk" > $resultset_tmpf
+				rbw=$(cat $resultset_tmpf)
 				mysql_query "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE $where /* update 5 */" "$db" >> $rollback_file
 			else
 				saveIFS="$IFS"
 				IFS="
 "
-				for row in $(mysql_query "SELECT $pk FROM $table WHERE $where /* update 6 */" "$db")
+				#for row in $(mysql_query "SELECT $pk FROM $table WHERE $where /* update 6 */" "$db")
+				mysql_query "SELECT $pk FROM $table WHERE $where /* update 6 */" "$db" > $resultset_tmpf
+				for row in $(cat $resultset_tmpf)
 				do
-					res=$(mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 7 */" "$db")
-					res=$(echo "$res" | sed -e "s/'NULL'/NULL/g")
+					#res=$(mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 7 */" "$db")
+					mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 7 */" "$db" > $resultset2_tmpf
+					res=$(cat $resultset2_tmpf | sed -e "s/'NULL'/NULL/g")
 					echo "UPDATE $table SET $res WHERE $pk = '$row';" >> $rollback_file
 				done
 				IFS="$saveIFS"
 			fi
 		else
-			[ $pk_in_use -eq 0 ] && count=$(mysql_query "SELECT COUNT(*) FROM $table WHERE $where /* update 8 */" "$db") || count=1
+			if [ $pk_in_use -eq 0 ]
+			then
+				#count=$(mysql_query "SELECT COUNT(*) FROM $table WHERE $where /* update 8 */" "$db")
+				mysql_query "SELECT COUNT(*) FROM $table WHERE $where /* update 8 */" "$db" > $resultset_tmpf
+				count=$(cat $resultset_tmpf)
+			else
+				count=1
+			fi 
 			if [ $count -gt 1 ]
 			then
 				# assumes small table, add a check
 				rollback=1
 				delete_rollback  "$db" "$table" "$where" 1 >> $rollback_file
 			else
-				[ $skip_checks -eq 0 ] && rbs=$(rollback_args "$cols")
+				if [ $skip_checks -eq 0 ]
+				then
+					#rbs=$(rollback_args "$cols")
+					rollback_args "$cols" > $resultset_tmpf
+					rbs=$(cat $resultset_tmpf)
+				fi
 				mysql_query "SELECT $rbs FROM $table WHERE $where /* update 9 */" "$db" > $resultset_tmpf
 				res=$(sed -e "s/'NULL'/NULL/g" $resultset_tmpf)
 				if [ "$res" != "" ]
@@ -1463,13 +1485,14 @@ query_update()
 	fi
 	total_errors=$((total_errors-1))
 	run_statement "$1" $dryrun
-	old_fgp="$fgp"
+	update_old_fgp="$fgp"
 }
 
 show_rollback()
 {
 	display "<font size=2>---- start of rollback instructions ----" 0
-	d_text=$(escape_html "$(cat $1)")
+	escape_html "$(cat $1)" > $resultset_tmpf
+	d_text=$(cat $resultset_tmpf)
 	display "$d_text" 0
 	display "---- end of rollback instructions ----</font>" 0
 	display "" 0
@@ -1518,10 +1541,12 @@ process_query() {
 			;;
 		'delete') 
 			query_delete "$qte" "$2"
+			update_old_fgp=""
 			cm_log_q "$qte"
 			;;
 		'insert'|'replace') 
 			query_insert "$qte" "$2" "${q[0]}"
+			update_old_fgp=""
 			cm_log_q "$qte"
 			;;
 		'select'|'show'|'create'|'drop'|'alter'|'truncate'|'grant'|'drop'|'revoke') 
@@ -1636,7 +1661,8 @@ then
 			'commit') periodic_commit=0
 				[ "$value" = "on" ] && periodic_commit=1
 				;;
-			'commit_intv') commit_interval="$value";;
+			'commit_intv') commit_interval="$value"
+				;;
 			'ninja') 
 				[ "$value" = "on" ] && ninja=1
 				;;
@@ -1683,7 +1709,8 @@ then
 				qo=0
 				lq=""
 				display "<div id=\"clip_area\">" 0
-				for q in $(unescape_execute "$query")
+				unescape_execute "$query" >  $query_tmpf
+				while read -rd ";" q
 				do
 					nniq=$(echo "$q" | sed -e "s/\\\'//g" | tr -dc "'")
 					if [ $((${#nniq} % 2)) -eq 1 ]
@@ -1723,7 +1750,7 @@ then
 							fi
 						fi
 					fi
-				done
+				done < $query_tmpf
 				progress_bar_dismiss
 				[ $total_errors -eq 0 -a $total_warnings -eq 0 ] &&  echo "COMMIT;" >> $rollback_file || echo "ROLLBACK;" >> $rollback_file
 			fi

@@ -372,7 +372,7 @@ char **argv;
 {
 	char *b, *p, *r;
 	unsigned char sc;
-	int idx = -1;
+	int idx = 0;
 	int qo = 0;
 
 	if (argc < 3)  {
