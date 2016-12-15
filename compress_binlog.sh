@@ -31,7 +31,7 @@ echo "* all slaves low water mark: $min_pos"
 cd $BINLOG_DIR
 for f in $(find $BINLOG_DIR -name $base.[0-9]\* -mmin +$MIN_AGE_FOR_COMPRESSION | sort)
 do
-	[ ${f#*.} -gt $min_pos ] && break
+	[ ${f#*.} -ge $min_pos ] && break
 	if [[ $(file -b $f) == "MySQL"* ]]
 	then
 		echo "> compressing $(basename $f)"
