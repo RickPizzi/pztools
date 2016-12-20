@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.9.11"
+VERSION="1.9.12"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -837,7 +837,6 @@ index_in_use()
 	using_index=0
 		if [ "$ldb.$ltable" != "$iiu_cache" ]
 		then
-#			mysql_query "SELECT s.column_name, s.seq_in_index,  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name, (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE table_schema =  '$ldb' AND table_name = '$ltable' AND index_name=s.index_name) AS size FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' GROUP BY s.column_name ORDER BY s.index_name, s.seq_in_index" > $cardinfo_tmpf
 			mysql_query "SELECT s.column_name, s.seq_in_index,  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name, (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE table_schema =  '$ldb' AND table_name = '$ltable' AND index_name=s.index_name) AS size FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' ORDER BY s.index_name, s.seq_in_index" > $cardinfo_tmpf
 			iiu_cache="$ldb.$ltable"
 		fi
@@ -1358,7 +1357,6 @@ query_update()
 		do
 			saveIFS="$IFS"
 			IFS=" "
-			#rbs=$(rollback_args "$cols")
 			rollback_args "$cols" > $resultset_tmpf
 			rbs=$(cat $resultset_tmpf)
 			IFS="$saveIFS"
@@ -1369,7 +1367,6 @@ query_update()
 				if [ $pkc -gt 1 ]
 				then
 					IFS=" "
-					#rbw=$(rollback_pkwhere "$pk")
 					rollback_pkwhere "$pk" > $resultset_tmpf
 					rbw=$(cat $resultset_tmpf)
 					IFS="$saveIFS"
@@ -1377,11 +1374,9 @@ query_update()
 				else
 					IFS="
 "
-					#for row in $(mysql_query "SELECT $pk FROM $table WHERE ${wa[0]}='$naked_arg' /* update 2 */" "$db")
 					mysql_query "SELECT $pk FROM $table WHERE ${wa[0]}='$naked_arg' /* update 2 */" "$db" > $resultset_tmpf
 					for row in $(cat $resultset_tmpf)
                                 	do
-                                        	#res=$(mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 3 */" "$db")
                                         	mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 3 */" "$db" > $resultset2_tmpf
                                         	res=$(cat $resultset2_tmpf | sed -e "s/'NULL'/NULL/g")
                                         	echo "UPDATE $table SET $res WHERE $pk = '$row';" >> $rollback_file
@@ -1389,7 +1384,6 @@ query_update()
 					IFS="$saveIFS"
 				fi
 			else
-				#res=$(mysql_query "SELECT $rbs FROM $table WHERE ${wa[0]}='$naked_arg' /* update 4 */" "$db")
 				mysql_query "SELECT $rbs FROM $table WHERE ${wa[0]}='$naked_arg' /* update 4 */" "$db" > $resultset_tmpf
 				res=$(cat $resultset_tmpf | sed -e "s/'NULL'/NULL/g")
 				if [ "$res" != "" ]
@@ -1407,12 +1401,10 @@ query_update()
 		[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 		if [ $pkwa -eq 1 ]
 		then
-			#rbs=$(rollback_args "$cols")
 			rollback_args "$cols" > $resultset_tmpf
 			rbs=$(cat $resultset_tmpf)
 			if [ $pkc -gt 1 ]
 			then
-				#rbw=$(rollback_pkwhere "$pk")
 				rollback_pkwhere "$pk" > $resultset_tmpf
 				rbw=$(cat $resultset_tmpf)
 				mysql_query "SELECT CONCAT('UPDATE $table SET ', $rbs, ' WHERE ', $rbw, ';') FROM  $table WHERE $where /* update 5 */" "$db" >> $rollback_file
@@ -1420,11 +1412,9 @@ query_update()
 				saveIFS="$IFS"
 				IFS="
 "
-				#for row in $(mysql_query "SELECT $pk FROM $table WHERE $where /* update 6 */" "$db")
 				mysql_query "SELECT $pk FROM $table WHERE $where /* update 6 */" "$db" > $resultset_tmpf
 				for row in $(cat $resultset_tmpf)
 				do
-					#res=$(mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 7 */" "$db")
 					mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 7 */" "$db" > $resultset2_tmpf
 					res=$(cat $resultset2_tmpf | sed -e "s/'NULL'/NULL/g")
 					echo "UPDATE $table SET $res WHERE $pk = '$row';" >> $rollback_file
@@ -1434,7 +1424,6 @@ query_update()
 		else
 			if [ $pk_in_use -eq 0 ]
 			then
-				#count=$(mysql_query "SELECT COUNT(*) FROM $table WHERE $where /* update 8 */" "$db")
 				mysql_query "SELECT COUNT(*) FROM $table WHERE $where /* update 8 */" "$db" > $resultset_tmpf
 				count=$(cat $resultset_tmpf)
 			else
@@ -1448,7 +1437,6 @@ query_update()
 			else
 				if [ $skip_checks -eq 0 ]
 				then
-					#rbs=$(rollback_args "$cols")
 					rollback_args "$cols" > $resultset_tmpf
 					rbs=$(cat $resultset_tmpf)
 				fi
@@ -1712,8 +1700,9 @@ then
 				unescape_execute "$query" >  $query_tmpf
 				while read -rd ";" q
 				do
-					nniq=$(echo "$q" | sed -e "s/\\\'//g" | tr -dc "'")
-					if [ $((${#nniq} % 2)) -eq 1 ]
+					q1=${q//\\\'}
+					q2=${q1//[^\']}
+					if [ $((${#q2} % 2)) -eq 1 ]
 					then
 						if [ $qo -eq 0 ]
 						then
