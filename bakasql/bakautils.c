@@ -139,10 +139,12 @@ char **argv;
 	for (p = r; *p; p++) {
 		switch(*p) {
 			case '\'':
-				if (qo)
-					qo=0;
-				else
-					qo=1;
+				if (p == r || *(p - 1) != 0x5c) {
+					if (qo)
+						qo=0;
+					else
+						qo=1;
+				}
 				break;
 			case ',':
 				if (!qo)
