@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.9.17"
+VERSION="1.9.18"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -1242,39 +1242,41 @@ query_update()
 		table="${q[1]}"
 		check_table_presence
 		[ $table_present -ne 1 ] && return
-		qon=0
-		c=0
-		w=0
-		dml=""
-		for arg in ${q[@]}
-		do
-			uq1=${arg//\\\'}
-			uq2=${uq1//[^\']}
-			if [ $((${#uq2} % 2)) -eq 1 ]
-			then
-				[ $qon -eq 0 ] && qon=1 || qon=0
-			fi
-			if [ $qon -eq 0 ]
-			then
-				case "${arg,,}" in
-					'where')
-						w=$((c+1))
-						break
-						;;
-					'and') 
-						display "Syntax error near \"$arg\"" 1
-						return
-						;;
-				esac
-			fi
-			[ $c -ge 3 ] && dml="$dml $arg"
-			c=$((c + 1))
-		done
-		if [ $w -eq 0 ]
+	fi
+	qon=0
+	c=0
+	w=0
+	dml=""
+	for arg in ${q[@]}
+	do
+		uq1=${arg//\\\'}
+		uq2=${uq1//[^\']}
+		if [ $((${#uq2} % 2)) -eq 1 ]
 		then
-			display "UPDATE without WHERE is not allowed" 1
-			return
+			[ $qon -eq 0 ] && qon=1 || qon=0
+			c=$((c + 1))
+			continue
 		fi
+		if [ $qon -eq 0 ]
+		then
+			case "${arg,,}" in
+				'where')
+					w=$((c+1))
+					break
+					;;
+				'and') 
+					display "Syntax error near \"$arg\"" 1
+					return
+					;;
+			esac
+		fi
+		[ $c -ge 3 ] && dml="$dml $arg"
+		c=$((c + 1))
+	done
+	if [ $w -eq 0 ]
+	then
+		display "UPDATE without WHERE is not allowed" 1
+		return
 	fi
 	c=0
 	wn=$((${#q[@]}-1))
