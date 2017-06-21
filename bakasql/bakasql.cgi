@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.9.18"
+VERSION="1.9.22"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -44,7 +44,8 @@ resultset_tmpf=/tmp/bakasql.result.$$
 resultset2_tmpf=/tmp/bakasql.result2.$$
 w_resultset_tmpf=/tmp/bakasql.wresult.$$
 query_tmpf=/tmp/bakasql.query.$$
-trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf $vars_tmpf $cmlog_tmpf $totcnt_tmpf $cardinfo_tmpf $resultset_tmpf $w_resultset_tmpf $resultset2_tmpf $query_tmpf' 0
+explain_tmpf=/tmp/bakasql.explain.$$
+trap 'rm -f $tmpf $warnings_tmpf $errors_tmpf $output_tmpf $cached_db_tmpf $dump_tmpf $rows_tmpf $vars_tmpf $cmlog_tmpf $totcnt_tmpf $cardinfo_tmpf $resultset_tmpf $w_resultset_tmpf $resultset2_tmpf $query_tmpf $explain_tmpf' 0
 
 unescape_input()
 {
@@ -138,7 +139,7 @@ mysql_query()
 					mysql_debug "($ticket)<$myrow"
 					[[ $myrow == *"Rows matched:"* ]] && break
 					;;
-			'select'|'show')
+			'select'|'show'|'explain')
 					[[ $myrow == *"Empty set"* ]] && break
 					[[ $myrow == *"row"*"in set"* ]] && break
 					[[ $myrow == "ERROR "* ]] && break
@@ -166,7 +167,7 @@ mysql_query()
 		return
 	fi
 	case "$qtype" in
-		'begin'|'use'|'show'|'select'|'set'|'commit'|'rollback'|'create')
+		'begin'|'use'|'show'|'select'|'set'|'commit'|'rollback'|'create'|'explain')
 			;;
 		*)
 			show_warnings > $w_resultset_tmpf
@@ -836,30 +837,30 @@ index_in_use()
 		return
 	fi
 	using_index=0
-		if [ "$ldb.$ltable" != "$iiu_cache" ]
-		then
-			mysql_query "SELECT s.column_name, s.seq_in_index,  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name, (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE table_schema =  '$ldb' AND table_name = '$ltable' AND index_name=s.index_name) AS size FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' ORDER BY s.index_name, s.seq_in_index" > $cardinfo_tmpf
-			iiu_cache="$ldb.$ltable"
-		fi
-		cardmsg=$($BAKAUTILS index_in_use $cardinfo_tmpf "$cl" $MIN_REQ_CARDINALITY 2>>/tmp/bakautils.log)
-		if [ $? -eq 0 ]
-		then
-			using_index=1
-			enable_ninja=0
-			return
-		fi
-		if [ "$cardmsg" != "" ]
-		then
-			if [ $ninja -eq 0 ]
-			then
-				enable_ninja=1
-				display "$cardmsg" 3
-			else
-				display "WARNING: Considering low cardinality index due to <I>ninja mode</I> being enabled. Good luck." 3
-				using_index=1
-			fi
-		fi
+	if [ "$ldb.$ltable" != "$iiu_cache" ]
+	then
+		mysql_query "SELECT s.column_name, s.seq_in_index,  ROUND(s.cardinality / t.table_rows * 100) AS card, s.index_name, (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE table_schema =  '$ldb' AND table_name = '$ltable' AND index_name=s.index_name) AS size FROM information_schema.STATISTICS s LEFT JOIN information_schema.TABLES t ON s.table_schema = t.table_schema AND s.table_name = t.table_name  WHERE s.table_schema =  '$ldb' AND s.table_name = '$ltable' ORDER BY s.index_name, s.seq_in_index" > $cardinfo_tmpf
+		iiu_cache="$ldb.$ltable"
+	fi
+	cardmsg=$($BAKAUTILS index_in_use $cardinfo_tmpf "$cl" $MIN_REQ_CARDINALITY 2>>/tmp/bakautils.log)
+	if [ $? -eq 0 ]
+	then
+		using_index=1
+		enable_ninja=0
 		return
+	fi
+	if [ "$cardmsg" != "" ]
+	then
+		if [ $ninja -eq 0 ]
+		then
+			enable_ninja=1
+			display "$cardmsg" 3
+		else
+			display "WARNING: Considering low cardinality index due to <I>ninja mode</I> being enabled. Good luck." 3
+			using_index=1
+		fi
+	fi
+	return
 }
 
 insert_vars()
@@ -1122,6 +1123,8 @@ query_delete()
 		display "\"less than\" condition in WHERE is not supported" 1
 		return
 	fi
+	explain_query
+	[ $explain_check -eq 1 ] && return
 	index_in_use "$where"
 	[ $columns_check -eq 0 ] && return
 	if [ $using_index -eq 0 -a $ninja -eq 0 ]
@@ -1154,6 +1157,23 @@ query_delete()
 	fi
 	total_errors=$((total_errors-1))
 	run_statement "$1" $dryrun
+}
+
+explain_query()
+{
+	explain_check=0
+	mysql_query "EXPLAIN SELECT * FROM $table WHERE $where" "$db" > $explain_tmpf
+	er=($(cat $explain_tmpf | head -1 | tr "\t" " "))
+	[ "${er[9]}" = "Impossible" ] && return
+	if [ "${er[6]}" = "NULL" ]
+	then
+		num_rows
+		if [ $rows -ge 10000 ]
+		then
+			display "WHERE condition not using an index, query cannot be executed" 1
+			explain_check=1
+		fi
+	fi
 }
 
 query_insert()
@@ -1254,6 +1274,7 @@ query_update()
 		if [ $((${#uq2} % 2)) -eq 1 ]
 		then
 			[ $qon -eq 0 ] && qon=1 || qon=0
+			[ $c -ge 3 ] && dml="$dml $arg"
 			c=$((c + 1))
 			continue
 		fi
@@ -1335,6 +1356,8 @@ query_update()
 				return
 			fi
 		fi
+		explain_query
+		[ $explain_check -eq 1 ] && return
 		index_in_use "$where"
 		[ $columns_check -eq 0 ] && return
 		if [ $using_index -eq 0 ]
@@ -1491,6 +1514,8 @@ query_update()
 						echo "-- where condition in the following code was modified to remove updated column $uciw" >> $rollback_file
 						echo "UPDATE $table SET $res WHERE $aw;" >> $rollback_file
 					fi
+				else
+					echo "-- row(s) not found with specified WHERE clause, no rollback needed" >> $rollback_file
 				fi
 			fi
 		fi
