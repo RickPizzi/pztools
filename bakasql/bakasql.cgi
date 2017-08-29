@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.9.22"
+VERSION="1.9.23"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -1493,9 +1493,9 @@ query_update()
 				then
 					rollback=1
 					# check special case where one of cols being updated is also in where clause
-					amr=0
 					if [ $skip_checks -eq 0 -a $pk_in_use -eq 1 ]
 					then
+						amr=0
 						for uciw in $cols
 						do
 							if [[ ${where^^} == *" AND ${uciw^^} "* ]]
