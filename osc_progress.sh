@@ -1,11 +1,10 @@
 #!/bin/bash
 #
 #	shows real progress of an online schema change session
-#	when PK is a numeric autoinc column (works for partitioned tables too)
-#	uses current user to log to the DB; you can specify the user running the OSC as an argument to the script
-#	if it is different than the user running this script (eg. if you want to run this on a slave)
-#	rpizzi@lastminute.com
-#	v1.2
+#	works when PK is a numeric autoinc column
+#	uses current user to log to the DB; you can specify the user running the OSC as an argument,
+#	if different than the user running this script (eg. if you want to run this on a slave)
+#	rpizzi@blackbirdit.com
 #
 echo -n "$USER's MySQL Password: "
 stty -echo
