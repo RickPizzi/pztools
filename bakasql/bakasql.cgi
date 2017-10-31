@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.9.23"
+VERSION="1.9.24"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -332,7 +332,7 @@ show_form()
 	printf "</SELECT></TD></TR>\n"
 	printf "<TR><TD>User:</TD><TD><INPUT TYPE=TEXT NAME=\"user\" VALUE=\"$user\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>Password:</TD><TD><INPUT TYPE=PASSWORD NAME=\"password\" VALUE=\"$password\" MAXLENGTH=40 SIZE=16></TD></TR>\n"
-	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$default_db\" MAXLENGTH=32 SIZE=32></TD></TR>\n"
+	printf "<TR><TD>Schema:</TD><TD><INPUT TYPE=TEXT NAME=\"schema\" VALUE=\"$default_db\" MAXLENGTH=64 SIZE=32></TD></TR>\n"
 	printf "<TR><TD>Ticket #:</TD><TD><INPUT TYPE=TEXT NAME=\"ticket\" VALUE=\"$ticket\" MAXLENGTH=16 SIZE=16></TD></TR>\n"
 	printf "<TR><TD>Remove backquotes:</TD><TD><INPUT TYPE=CHECKBOX NAME=\"backq\"></TD></TR>\n" 
 	printf "<TR><TD COLSPAN=2><FONT SIZE=1><A HREF=\"#\" onclick=\"adv_options();\">advanced options</A></FONT></TD><TR>\n"
