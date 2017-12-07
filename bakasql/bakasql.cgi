@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.9.24"
+VERSION="1.10.1"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -210,12 +210,13 @@ delete_rollback ()
 	fi
 	rtc=$(echo $tc | sed -e "s/,/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@'),REPLACE(REPLACE(REPLACE(/g" -e "s/^/REPLACE(REPLACE(REPLACE(/g" -e "s/$/,'\n', '@xc_NL@'), '\r', '@xc_CR@'), '\t', '@xc_TAB@')/g")
 	mysql_query "SELECT $rtc FROM $1.$2 WHERE $3 /* delete_rollback */" > $dump_tmpf
-	[ -s $dump_tmpf ] && cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/$insert INTO $2 VALUES ('/g" -e "s/$/');/g" -e "s/'NULL'/NULL/g" -e "s/@xc_NL@/\\\n/g" -e "s/@xc_CR@/\\\r/g" -e "s/@xc_TAB@/\\\t/g"
+	[ -s $dump_tmpf ] && cat  $dump_tmpf | sed -e "s/	/','/g" -e "s/^/$insert INTO $1.$2 VALUES ('/g" -e "s/$/');/g" -e "s/'NULL'/NULL/g" -e "s/@xc_NL@/\\\n/g" -e "s/@xc_CR@/\\\r/g" -e "s/@xc_TAB@/\\\t/g"
 }
 
 page_style()
 {
 	printf "<head>\n"
+	printf "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/push.js/0.0.11/push.min.js\"></script>\n"
 	printf "<link rel=\"icon\" type=\"image/png\" href=/favicon.png\"/>"
 	printf "<style>\n"
 	printf "body {\n"
@@ -512,15 +513,14 @@ num_rows()
 
 autoinc_rollback()
 {
-	[ "$db" != "" ] && echo "USE $db" 
 	get_pk $db $table
 	for idx in $(seq -s "	" 1 1 $rows_affected)
 	do
 		case $dryrun in 
-			0) 	[ $idx -eq 1 ] && echo "DELETE FROM $table WHERE $pk = '$last_id';" || echo "DELETE FROM $table WHERE $pk = '$((last_id + (idx - 1) * autoinc_inc))';"
+			0) 	[ $idx -eq 1 ] && echo "DELETE FROM $db.$table WHERE $pk = '$last_id';" || echo "DELETE FROM $db.$table WHERE $pk = '$((last_id + (idx - 1) * autoinc_inc))';"
 				;;
 			1) 
-				[ $idx -eq 1 ] && echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE';" || echo "DELETE FROM $table WHERE $pk = 'ASSIGNED AUTOINC VALUE + $(((idx - 1) * autoinc_inc))';"
+				[ $idx -eq 1 ] && echo "DELETE FROM $db.$table WHERE $pk = 'ASSIGNED AUTOINC VALUE';" || echo "DELETE FROM $db.$table WHERE $pk = 'ASSIGNED AUTOINC VALUE + $(((idx - 1) * autoinc_inc))';"
 				;;
 		esac
 	done
@@ -584,7 +584,6 @@ replace_rollback()
 		rr_cache2="$db.$table"
 	fi
 	echo "-- Rollback instructions for query $qc"
-	echo "SET NAMES utf8;"
 	if [ $rr_nkeys != $rr_nkeys_used -a $auto_increment -eq 0 ]
 	then
 		if [ "$rr_unique" = "" ]
@@ -621,7 +620,6 @@ replace_rollback()
 		IFS="$saveIFS"
 		return
 	fi
-	[ "$db" != "" ] && echo "USE $db" 
 	IFS="
 "
 	for rr_row in $(echo "$rr_q" | cut -d ")" -f2- | sed -e "s/ *VALUES *//ig" -e "s/ *VALUES *(/(/ig" -e "s/ *VALUES$//ig" -e "s/),(/\x0a/g"  -e "s/^ *(//g"  -e "s/), *(/\x0a/g" -e "s/) *, *(/\x0a/g" -e "s/) *;*$//g" -e "s/' *, */'	/g" -e "s/ *, */	/g")
@@ -670,7 +668,7 @@ replace_rollback()
 			rr_idx=$((rr_idx + 1))
 		done
 		[ $undet -eq 1 ] && break
-		echo "DELETE FROM $table WHERE $rr_where;"
+		echo "DELETE FROM $db.$table WHERE $rr_where;"
 		
 		[ $replace -eq 1 ] && delete_rollback  "$db" "$table" "$rr_where" 0
 		IFS="
@@ -768,6 +766,7 @@ check_columns()
 	for arg in $1
 	do
 		[ $(echo $arg | fgrep -c ".") -gt 0 ] && arg=$(echo $arg | cut -d"." -f 2)
+		arg=$(echo $arg | tr -d "\`")
 		cc=$(mysql_query "SELECT COUNT(*) + IF (COLUMN_KEY = 'PRI', 1, 0) FROM information_schema.columns WHERE TABLE_SCHEMA = '$db' AND TABLE_NAME = '$table' AND COLUMN_NAME = '$arg' /* check_columns */")
 		case $cc in
 			0)
@@ -1142,19 +1141,10 @@ query_delete()
 		parsed_db=$(echo $table | cut -d"." -f 1)	
 		parsed_table=$(echo $table | cut -d"." -f 2)	
 		delete_rollback  "$parsed_db" "$parsed_table" "$where" 0 > $tmpf
-		if [ -s $tmpf ] 
-		then
-			echo "USE $parsed_db" >> $rollback_file
-			cat $tmpf >> $rollback_file
-		fi
 	else
 		delete_rollback  "$db" "$table" "$where" 0 > $tmpf
-		if [ -s $tmpf ] 
-		then
-			echo "USE $db" >> $rollback_file
-			cat $tmpf >> $rollback_file
-		fi
 	fi
+	[ -s $tmpf ] && cat $tmpf >> $rollback_file
 	total_errors=$((total_errors-1))
 	run_statement "$1" $dryrun
 }
@@ -1399,7 +1389,6 @@ query_update()
 		#	WHERE key IN (....)
 		#
 		echo "-- Rollback instructions for query $qc" >> $rollback_file
-		[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 		for arg in ${in_set[@]}
 		do
 			saveIFS="$IFS"
@@ -1426,7 +1415,7 @@ query_update()
                                 	do
                                         	mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 3 */" "$db" > $resultset2_tmpf
                                         	res=$(cat $resultset2_tmpf | sed -e "s/'NULL'/NULL/g")
-                                        	echo "UPDATE $table SET $res WHERE $pk = '$row';" >> $rollback_file
+                                        	echo "UPDATE $db.$table SET $res WHERE $pk = '$row';" >> $rollback_file
                                 	done
 					IFS="$saveIFS"
 				fi
@@ -1436,7 +1425,7 @@ query_update()
 				if [ "$res" != "" ]
 				then
 					rollback=1
-					echo "UPDATE $table SET $res WHERE ${wa[0]}='$naked_arg';" >> $rollback_file
+					echo "UPDATE $db.$table SET $res WHERE ${wa[0]}='$naked_arg';" >> $rollback_file
 				fi
 			fi
 		done
@@ -1445,7 +1434,6 @@ query_update()
 		#	WHERE key = ....
 		#
 		echo "-- Rollback instructions for query $qc" >> $rollback_file
-		[ "$db" != "" ] && echo "USE $db" >> $rollback_file	
 		if [ $pkwa -eq 1 ]
 		then
 			rollback_args "$cols" > $resultset_tmpf
@@ -1464,7 +1452,7 @@ query_update()
 				do
 					mysql_query "SELECT $rbs FROM $table WHERE $pk = '$row' /* update 7 */" "$db" > $resultset2_tmpf
 					res=$(cat $resultset2_tmpf | sed -e "s/'NULL'/NULL/g")
-					echo "UPDATE $table SET $res WHERE $pk = '$row';" >> $rollback_file
+					echo "UPDATE $db.$table SET $res WHERE $pk = '$row';" >> $rollback_file
 				done
 				IFS="$saveIFS"
 			fi
@@ -1509,10 +1497,10 @@ query_update()
 					fi
 					if [ $amr -eq 0 ]
 					then
-						echo "UPDATE $table SET $res WHERE $where;" >> $rollback_file
+						echo "UPDATE $db.$table SET $res WHERE $where;" >> $rollback_file
 					else
 						echo "-- where condition in the following code was modified to remove updated column $uciw" >> $rollback_file
-						echo "UPDATE $table SET $res WHERE $aw;" >> $rollback_file
+						echo "UPDATE $db.$table SET $res WHERE $aw;" >> $rollback_file
 					fi
 				else
 					echo "-- row(s) not found with specified WHERE clause, no rollback needed" >> $rollback_file
@@ -1646,6 +1634,18 @@ progress_bar_dismiss()
 	progress_bar_visibility_toggle
 }
 
+notify()
+{
+	printf "<script>\n"
+	printf "Push.create('BakaSQL speaks...', {\n"
+	printf "\t\tbody: '%s!',\n" "$1"
+	printf "\t\ticon: '/bakaicon.png',\n"
+	printf "\t\trequireInteraction: true,\n"
+	printf "\t}\n"
+	printf ");\n"
+	printf "</script>\n"
+}
+
 copy_to_clipboard()
 {
 	display "</div>" 0
@@ -1662,6 +1662,7 @@ printf "Content-Type: text/html; charset=utf-8\n\n"
 printf "<HTML>\n"
 page_style
 printf "<BODY>\n"
+printf "<script>Push.Permission.request();</script>\n"
 printf "<FONT SIZE=3>\n"
 case "$REQUEST_METHOD" in
 	'GET');;
@@ -1740,7 +1741,8 @@ then
 				else
 					rollback_file="$BASE/rollback/${user}_${host}_$(date "+%Y%m%d_%T")_$$.sql"
 				fi
-				echo "BEGIN;" > $rollback_file
+				echo "SET NAMES utf8;" > $rollback_file
+				echo "BEGIN;" >> $rollback_file
 				progress_bar_init
 				qc=0
 				qo=0
@@ -1812,6 +1814,7 @@ then
 				fi
 				mysql_query "ROLLBACK" > /dev/null
 				rm -f $rollback_file ${rollback_file}_*_dump.gz 
+				notify "dry run of $ticket completed"
 			else
 				if [ $qc -gt 0 ]
 				then
@@ -1831,12 +1834,14 @@ then
 								display "Execution failed, but due to periodic commit being ON some statements have been committed before the first error was encountered.<BR>Check rollback file for statements that were already committed,and rollback them NOW. Errors: $total_errors  Warnings: $total_warnings" 1
 							fi
 						fi
+						notify "$ticket failed!"
 					else
 						mysql_query "COMMIT" > /dev/null
 						end_time=$(mysql_query "SELECT DATE_FORMAT(UTC_TIMESTAMP(), '%d-%m-%Y %H:%i:%S')")
 						display "Done. Rollback statements saved in $rollback_file on $(hostname)." 0
 						copy_to_clipboard
 						cm_integration
+						notify "$ticket is done!"
 					fi
 				fi
 			fi
