@@ -1,0 +1,57 @@
+A couple bash scripts to automate archiviation of tables.
+These can be used to automatically archive old partitions before dropping them.
+
+In order to archive a table, the following requirements must be met:
+- table must be partitioned by range
+- primary key must be an auto increment integer (better said, must start with an auto increment integer)
+- you need to use the same retention in these scripts and in the partition management script
+
+There are two scripts:
+- archive.sh is the actual archiviation script
+- ok2drop.sh is a script that checks that the partition has been successfully archived, and exits with zero if success
+
+The archiviation system is based on the retention that you have set. 
+Each 1st day of month (assuming you have monthly partitions) the archiviation script will detect that there is a
+partition that needs archived, this is computed based on the set retention; for example, if you have a retention of 
+three months, it will look for the partition that has data older than 3 months. 
+After checking in the destination (archive) table that the data isn't there yet, it will archive it using pt-archiver.
+The following days the archiviation script will detect that the partition has already been archived and will just exit, 
+until the first day of the next month.
+
+PLEASE NOTE:
+
+- origin and destination servers are defined at the top of the scripts
+- schema name used on destination server is set to origin schema name. Trivial to change this if you need to
+
+Partition management should be handled separately, please see the pdb-parted utility that you can find on my GitHub page.
+The supplied script ok2drop.sh can be used in conjunction with pdb-parted (or your partition management script of choice)
+to check whether the partition has been successfully archived and therefore can be safely dropped. See example below.
+
+IMPORTANT: all checks are made based on the MAX value for the auto increment PK. These scripts will not work if you have 
+a non auto increment PK.
+
+USAGE
+
+archive.sh source_schema source_table pk_name partitioning_column destination_table optional_where
+
+source_schema		schema of source table on origin server
+source_table		name of source table on origin server
+pk_name			name of the auto increment column which is part of your primary key
+partitioning_column	name of the column you used to partition by range
+destination_table	name of the destination table on destination server, may be same as source_table
+optional_where		a double quote enclosed optional where clause to filter rows to archive
+
+eg.
+
+# without any filter, same table name to different server (set inside script)
+./archive.sh stats REQUEST_XML ID REQ_DATE REQUEST_XML
+# with filter, different destination table name 
+./archive.sh stats REQUEST_XML ID REQ_DATE REQUEST_XML_ARCHIVED "AND SOURCE_ENGINE IN ('HIKER', 'ONEWAY', 'FUSION')"
+
+
+EXAMPLE USAGE with pdb-parted
+
+# partition add
+/usr/local/dba/sbin/pdb-parted --add --interval m +6m h=10.10.5.128,D=source_schema,t=source_table,u=partman,p=secret
+# partition drop
+/localhome/dbadm/ARCHIVER/bin/ok2drop.sh source_schema source_table destination_table "where condition" && /usr/local/dba/sbin/pdb-parted --drop -12m h=10.10.5.128,D=source_schema,t=source_table,u=partman,p=secret
