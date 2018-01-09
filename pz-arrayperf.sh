@@ -2,7 +2,7 @@
 #
 #	pz-arrayperf.sh - pretty prints storage statistics, autodetecting LVM layout
 #
-#	requires ioping, and is best used with "watch", as in "watch -n 1 ./pz-arrayperf,sh"
+#	requires ioping, and is best used with "watch", as in "watch -n 1 ./pz-arrayperf.sh"
 #	pizzi@leopardus.com
 #
 #
