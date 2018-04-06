@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.10.1"
+VERSION="1.10.2"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -1155,6 +1155,7 @@ explain_query()
 	mysql_query "EXPLAIN SELECT * FROM $table WHERE $where" "$db" > $explain_tmpf
 	er=($(cat $explain_tmpf | head -1 | tr "\t" " "))
 	[ "${er[9]}" = "Impossible" ] && return
+	[ "${er[9]}" = "no" -a "${er[10]}" = "matching" ] && return
 	if [ "${er[6]}" = "NULL" ]
 	then
 		num_rows
