@@ -3,7 +3,7 @@
 #	BakaSQL (formerly web query executor )
 #	riccardo.pizzi@lastminute.com Jan 2015
 #
-VERSION="1.10.4"
+VERSION="1.10.5"
 HOSTFILE=/etc/bakasql.conf
 BASE=/usr/local/bakasql
 MIN_REQ_CARDINALITY=5
@@ -526,6 +526,21 @@ autoinc_rollback()
 	done
 }
 
+comp_autoinc_rollback()
+{
+	get_ai_pk_part $db $table
+	for idx in $(seq -s "	" 1 1 $rows_affected)
+	do
+		case $dryrun in 
+			0) 	[ $idx -eq 1 ] && echo "DELETE FROM $db.$table WHERE $pk = '$last_id' AND $rr_where;" || echo "DELETE FROM $db.$table WHERE $pk = '$((last_id + (idx - 1) * autoinc_inc))' AND $rr_where;"
+				;;
+			1) 
+				[ $idx -eq 1 ] && echo "DELETE FROM $db.$table WHERE $pk = 'ASSIGNED AUTOINC VALUE' AND $rr_where;" || echo "DELETE FROM $db.$table WHERE $pk = 'ASSIGNED AUTOINC VALUE + $(((idx - 1) * autoinc_inc))' AND $rr_where;"
+				;;
+		esac
+	done
+}
+
 get_col_names()
 {
 	case "$2" in
@@ -612,13 +627,19 @@ replace_rollback()
 		has_both=0
 	fi
 	#echo "-- DEBUG: keys=$rr_nkeys used=$rr_nkeys_used ukeys=$rr_nukeys used=$rr_nukeys_used using_primary=$rr_using_primary"
+	composite_autoinc=0
 	# special case: autoinc pk and no unique index
 	if [ $replace -eq 0 -a $rr_using_primary -eq 1 -a $auto_increment -eq 1 ]
 	then
-		IFS="	"
-		autoinc_rollback
-		IFS="$saveIFS"
-		return
+		if [ $rr_nkeys -eq 1 ]
+		then
+			IFS="	"
+			autoinc_rollback
+			IFS="$saveIFS"
+			return
+		else
+			composite_autoinc=1
+		fi
 	fi
 	IFS="
 "
@@ -657,6 +678,11 @@ replace_rollback()
 						nobq="${rr_col_names[$rr_idx]//\`}"
 						if [ "${nobq,,}" = "${arg,,}" ]
 						then
+							if [ "$(echo ${rr_col_values[$rr_idx]} | grep -v "^'" | tr -dc '()')" != "" ]
+							then
+								undet=1	# insert contains non deterministic values
+								break
+							fi
 							[ $rr_kc -gt 0 ] && rr_where="$rr_where AND"
 							rr_where="$rr_where ${rr_col_names[$rr_idx]} = ${rr_col_values[$rr_idx]}"
 							rr_kc=$((rr_kc + 1))
@@ -668,7 +694,12 @@ replace_rollback()
 			rr_idx=$((rr_idx + 1))
 		done
 		[ $undet -eq 1 ] && break
-		echo "DELETE FROM $db.$table WHERE $rr_where;"
+		if [ $composite_autoinc -eq 1 ]
+		then 
+			comp_autoinc_rollback
+		else
+			echo "DELETE FROM $db.$table WHERE $rr_where;"
+		fi
 		
 		[ $replace -eq 1 ] && delete_rollback  "$db" "$table" "$rr_where" 0
 		IFS="
@@ -694,6 +725,12 @@ get_pk()
 	rs=$(mysql_query "SHOW INDEX FROM $1.$2 WHERE KEY_NAME = 'PRIMARY'" "$1")
 	pk=$(echo "$rs" | cut -f 5 | tr "\n" " " | sed -e "s/ $//g")
 	pk_cache="$1.$2"
+}
+			
+get_ai_pk_part()
+{
+	rs=$(mysql_query "SHOW INDEX FROM $1.$2 WHERE KEY_NAME = 'PRIMARY' AND SEQ_IN_INDEX = 1" "$1")
+	pk=$(echo "$rs" | cut -f 5 | tr "\n" " " | sed -e "s/ $//g")
 }
 			
 check_autoincrement()
