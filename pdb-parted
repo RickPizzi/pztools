@@ -873,7 +873,7 @@ sub expression_column {
 
 sub expr_datelike {
   my ($self) = @_;
-  my %datefuncs = ( 'to_days' => 'from_days', 'month' => 1, 'year' => 'rick_year', 'unix_timestamp' => 'from_unixtime' );
+  my %datefuncs = ( 'to_days' => 'from_days', 'month' => 1, 'year' => 'rick_year', 'unix_timestamp' => 'from_unixtime', 'to_seconds' => 'rick_seconds' );
   $self->{partition_expression} =~ /^\s*([A-Za-z\-_\$]+)\(([A-Za-z0-9\-_\$]+)\)/i;
   if($datefuncs{lc($1)}) {
     	return ($2, $1, $datefuncs{lc($1)});
@@ -1053,6 +1053,10 @@ sub desc_from_datelike {
 
   if ($cfn eq "rick_year") {
   	my ($ds) = $self->{dbh}->selectrow_array("SELECT '$desc-01-01'");
+  	return $ds;
+  }
+  if ($cfn eq "rick_seconds") {
+  	my ($ds) = $self->{dbh}->selectrow_array("SELECT TIMESTAMPADD(SECOND, $desc - 86400, '0000-01-01 00:00:00')");
   	return $ds;
   }
   else {
