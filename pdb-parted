@@ -3,7 +3,7 @@
 # Copyright (C) 2009-2013 PalominoDB, Inc.
 # Copyright (C) 2016 Rick Pizzi
 # 
-# You may contact the maintainers at eng@palominodb.com.
+# You may contact the current maintainer at pizzi@leopardus.com
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,6 +21,10 @@
 
 # Dec 02, 2016: Rick: patched to allow use of hourly partitions
 # Jul 22, 2019: Rick: patched to use when no partitioning function defined
+
+#
+# REQUIRES perl-DateTime-Format-Strptime  package 
+#
 
 use strict;
 use warnings FATAL => 'all';
