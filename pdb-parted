@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # pdb-parted
 # Copyright (C) 2009-2013 PalominoDB, Inc.
-# Copyright (C) 2016 Rick Pizzi
+# Copyright (C) 2016-2019 Rick Pizzi
 # 
 # You may contact the current maintainer at pizzi@leopardus.com
 # 
@@ -20,7 +20,9 @@
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 # Dec 02, 2016: Rick: patched to allow use of hourly partitions
-# Jul 22, 2019: Rick: patched to use when no partitioning function defined
+# Jul 22, 2019: Rick: patched to use when no partitioning function defined (part col is integer)
+# Oct 18, 2019: Rick: patched for MariaDB 10.3 which puts backticks around column names in I_S
+
 
 #
 # REQUIRES perl-DateTime-Format-Strptime  package 
@@ -880,7 +882,7 @@ sub expression_column {
 sub expr_datelike {
   my ($self) = @_;
   my %datefuncs = ( 'to_days' => 'from_days', 'month' => 1, 'year' => 'rick_year', 'unix_timestamp' => 'from_unixtime', 'to_seconds' => 'rick_seconds' );
-  $self->{partition_expression} =~ /^\s*([A-Za-z\-_\$]+)\(([A-Za-z0-9\-_\$]+)\)/i;
+  $self->{partition_expression} =~ /^\s*([A-Za-z\-_\$]+)\(([A-Za-z0-9\-_\$`]+)\)/i;
   if(defined $1 and $datefuncs{lc($1)}) {
     	return ($2, $1, $datefuncs{lc($1)});
   }
