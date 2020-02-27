@@ -25,7 +25,7 @@
 
 
 #
-# REQUIRES perl-DateTime-Format-Strptime  package 
+# REQUIRES perl-DateTime-Format-Strptime and perl-DBD-MySQL package 
 #
 
 use strict;
