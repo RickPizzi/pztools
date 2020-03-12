@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #
-#	pz-slave-monitor
+#	pz-slave-monitor 1.01
 #	monitor performances of SQL_thread and saves queries
 #	longer than <min query time> in a file in the output folder
 #
@@ -49,22 +49,25 @@ do
 		fi
 		sleep 5
 		continue
-	else
-		[ "$running" = "" ] && break
-		rbmsg=0
 	fi
+	[ "$running" = "" ] && break
 	if [ "$oldpos" != "$relay_file:$relay_pos" ]
 	then
-		diff=$((($(date +%s%N)-start_ts)/1000000))
-		if [ $i -gt 1 -a $diff -ge $threshold ]
+		if [ $i -gt 1 ]
 		then
-			echo -e "\rExecuted $oldpos in $diff ms (loop time $(bc <<< "scale=1;$diff/$i") ms)"
-			mysqlbinlog --base64-output=never -j ${oldpos#*:} $DATADIR/${oldpos%%:*} | egrep -v "^SET|^/\*!\*/;" | head -200 | fgrep -A 50 "# at ${oldpos#*:}" | grep -B 50 -m 1 "^COMMIT" > $FOLDER/${diff}_${oldpos%%:*}:${oldpos#*:} &
+			rbmsg=0
+			diff=$((($(date +%s%N)-start_ts)/1000000))
+			if [ $diff -ge $threshold ]
+			then
+				echo -e "\rExecuted $oldpos in $diff ms ($i loops avg. $(bc <<< "scale=1;$diff/$i") ms)"
+				mysqlbinlog --base64-output=never -j ${oldpos#*:} $DATADIR/${oldpos%%:*} | egrep -v "^SET|^/\*!\*/;" | head -200 | fgrep -A 50 "# at ${oldpos#*:}" | grep -B 50 -m 1 "^COMMIT" > $FOLDER/${diff}_${oldpos%%:*}:${oldpos#*:} &
+			fi
 		fi
 		oldpos="$relay_file:$relay_pos"
-		start_ts=$(date +%s%N)	
 		i=0
+		start_ts=$(date +%s%N)	
 	fi
 	i=$((i+1))
 	echo -en "\r  $i "
 done
+
