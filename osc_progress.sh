@@ -17,7 +17,7 @@ EST_PREC=30
 echo -n "Getting OSC information... "
 while true
 do
-	row=$(echo "select * from information_schema.processlist where user = '"$OSC_USER"' and info like 'INSERT LOW%'" | mysql -AN -u $OSC_USER 2>/dev/null | sed -e "s/\`//g")
+	row=$(echo "select * from information_schema.processlist where user = '"$OSC_USER"' and info like 'INSERT LOW%'" | mysql -AN -u $USER 2>/dev/null | sed -e "s/\`//g")
 	[ "$row" != "" ] && break
 	sleep 1
 done
@@ -26,8 +26,8 @@ table=$(echo $row | grep -oP '(?<=FROM\s)\w+\.\w+' | uniq)
 table_schema=$(echo $table | cut -d"." -f1)
 table_name=$(echo $table | cut -d"." -f2)
 pk=$(echo $row | grep -oP '(?<=WHERE\s\(\()\w+' | uniq)
-pksize=$(echo "select count(*)  from information_schema.columns where table_schema = '"$table_schema"' and table_name = '"$table_name"' and column_key = 'PRI'" | mysql -AN -u $OSC_USER 2>/dev/null)
-coltype=$(echo "select data_type from information_schema.columns where table_schema = '"$table_schema"' and table_name = '"$table_name"' and column_name = '"$pk"'" | mysql -AN -u $OSC_USER 2>/dev/null)
+pksize=$(echo "select count(*)  from information_schema.columns where table_schema = '"$table_schema"' and table_name = '"$table_name"' and column_key = 'PRI'" | mysql -AN -u $USER 2>/dev/null)
+coltype=$(echo "select data_type from information_schema.columns where table_schema = '"$table_schema"' and table_name = '"$table_name"' and column_name = '"$pk"'" | mysql -AN -u $USER 2>/dev/null)
 case "$coltype" in
         'int'|'bigint') ;;
         *) echo "sorry, this script only works when PK is an integer"; exit 1;;
@@ -36,12 +36,12 @@ pval=0
 declare -a speed
 while true
 do
-        target=$(echo "select $pk from $table order by 1 desc limit 1" | mysql -AN -u $OSC_USER 2>/dev/null)
+        target=$(echo "select $pk from $table order by 1 desc limit 1" | mysql -AN -u $USER 2>/dev/null)
         if [ $pksize -eq 1 ]
         then
-		curr=$(echo "select  substring_index(substring_index(right(info, 100), '<= \'', -1), '\')', 1)  from information_schema.processlist where user = '"$OSC_USER"' and info like 'INSERT LOW%'" | mysql -AN -u $OSC_USER 2>/dev/null)
+		curr=$(echo "select  substring_index(substring_index(right(info, 100), '<= \'', -1), '\')', 1)  from information_schema.processlist where user = '"$OSC_USER"' and info like 'INSERT LOW%'" | mysql -AN -u $USER 2>/dev/null)
         else
-        	curr=$(echo "select  substring_index(substring_index(right(info, 200), '= \'', -2), '\')', 1)  from information_schema.processlist where user = '"$OSC_USER"' and info like 'INSERT LOW%'" | mysql -AN -u $OSC_USER 2>/dev/null | cut -d"'" -f 1)
+        	curr=$(echo "select  substring_index(substring_index(right(info, 200), '= \'', -2), '\')', 1)  from information_schema.processlist where user = '"$OSC_USER"' and info like 'INSERT LOW%'" | mysql -AN -u $USER 2>/dev/null | cut -d"'" -f 1)
         fi
         if [ "$curr" = "" ]
         then
