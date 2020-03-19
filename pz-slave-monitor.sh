@@ -8,7 +8,7 @@
 #	rick.pizzi@mariadb.com
 #
 #
-DATADIR=/var/lib/mysql
+RELAYDIR=/var/lib/mysql
 FOLDER=./output
 MIN_THRESHOLD=25 # milliseconds
 #
@@ -60,7 +60,7 @@ do
 			if [ $diff -ge $threshold ]
 			then
 				echo -e "\rExecuted $oldpos in $diff ms ($i loops avg. $(bc <<< "scale=1;$diff/$i") ms)"
-				mysqlbinlog --base64-output=never -j ${oldpos#*:} $DATADIR/${oldpos%%:*} | egrep -v "^SET|^/\*!\*/;" | head -200 | fgrep -A 50 "# at ${oldpos#*:}" | grep -B 50 -m 1 "^COMMIT" > $FOLDER/${diff}_${oldpos%%:*}:${oldpos#*:} &
+				mysqlbinlog --base64-output=never -j ${oldpos#*:} $RELAYDIR/${oldpos%%:*} | egrep -v "^SET|^/\*!\*/;" | head -200 | fgrep -A 50 "# at ${oldpos#*:}" | grep -B 50 -m 1 "^COMMIT" > $FOLDER/${diff}_${oldpos%%:*}:${oldpos#*:} &
 			fi
 		fi
 		oldpos="$relay_file:$relay_pos"
