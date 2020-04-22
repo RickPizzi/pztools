@@ -1,0 +1,15 @@
+A small C program and wrapper script that will trace any DELETE happening 
+on a master server into a separate table. Useful to track rows deleted 
+that often go unnoticed when populating a BI platform using the usual
+methods.
+
+The binary logs are examined at regular intervals and any DELETE that involves
+one of the configured tables is tracked into a separate table, including
+the table schema and name and the where statement.
+
+If using with galera cluster, install and run the script and program on
+all nodes, it will only do its work on the node that is current master.
+
+HTH
+
+Rick
