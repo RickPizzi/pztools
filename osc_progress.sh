@@ -9,6 +9,9 @@
 #
 #   March 2020: added ETA indicator (and it works properly, unlike the pt-osc one!)
 #
+#   USAGE NOTE: if database user for pt-osc is not the same as shell user, you need 
+#               to pass that user to osc_progress.sh on the command line
+#
 #
 AVG_BUF_SIZE=120
 #
