@@ -41,6 +41,7 @@ while true
 do
         target=$(echo "select $pk from $table order by 1 desc limit 1" | mysql -AN -u $OSC_USER 2>/dev/null)
         if [ $pksize -eq 1 ]
+	then
 	    perc=$(echo "scale=2; $percd * 100" | bc)
 	    cval=$(expr $(echo $percd | tr -d ".") + 0)
 	    if [ $pval -gt 0 ]
@@ -80,6 +81,9 @@ do
 	    fi
 	    pval=$cval
             sleep 30
+	else
+            echo "Sorry, this tool requires the primary key to contain one column only. Exiting."
+            exit 1
         fi
 done
 exit 0
