@@ -1,20 +1,34 @@
 #!/bin/bash
 #
 #	populates table growth DB from selected slaves
-#	rpizzi@blackbirdit.com
+#	rick.pizzi@mariadb.com
 #
-SERVERS="10.77.24.11 10.77.25.134 10.77.25.147 10.77.25.104 10.77.24.138 10.77.25.34"
-EXCLUDE="pdb palomino percona information_schema performance_schema mysql"
+SKIP_SCHEMAS="information_schema performance_schema mysql"
+DB_SCHEMA=growth
+SKIP_TABLES="$DB_SCHEMA.growth"
+DB_USER=tablegrowth
+DB_PASS=yourpasshere
+DATADIR=/var/lib/mysql
 #
 c=0
-for e in $EXCLUDE
+for ss in $SKIP_SCHEMAS
 do
-	[ $c -gt 0 ] && exclude="$exclude, "
-	exclude="$exclude'$e'"
-	c=$(expr $c + 1)
+	[ $c -gt 0 ] && sskip="$sskip|"
+	sskip="$sskip^$ss/"
+	c=$((c+1))
 done
-for server in $SERVERS
+c=0
+for ss in $(echo $SKIP_TABLES | tr "[.]" "[/]") 
 do
-	echo "select concat('insert into growth values (null, \'', sample_date, '\', \'$server\', \'', table_schema, '\', \'', table_name, '\',' , gb_used, ');') from (select curdate() as sample_date, table_schema, table_name, (data_length+ index_length) / 1073741824  as gb_used from tables where table_schema not in ($exclude)) d" | mysql -h $server -AN information_schema | mysql -A -u growth -p'gr0wth!' tablegrowth
+	[ $c -gt 0 ] && tskip="$tskip|"
+	tskip="$tskip^$ss"
+	c=$((c+1))
 done
+cd $DATADIR
+IFS="
+"
+for ts in $(find . -type f -name \*ibd | cut -d "/" -f 2,3 | egrep -v "$sskip" | egrep -v "$tskip" | cut -d "." -f 1)
+do
+	echo "insert into growth values (null, curdate(), @@hostname, $(echo $ts| sed -re "s/(.*)\/(.*)/'\1', '\2'/g"), $(($(stat -c %s ./$ts.ibd)/1024/1024)));" 
+done | mysql -A $DB_SCHEMA
 exit 0

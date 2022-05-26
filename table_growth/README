@@ -12,7 +12,7 @@ Create Table: CREATE TABLE `growth` (
   `server` char(64) NOT NULL,
   `schema_name` char(32) NOT NULL,
   `table_name` char(64) NOT NULL,
-  `table_size` decimal(7,2) DEFAULT NULL,
+  `table_size` decimal(11,2) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `server` (`server`,`schema_name`,`table_name`),
   KEY `sample_date` (`sample_date`)
