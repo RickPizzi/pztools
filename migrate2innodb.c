@@ -1,6 +1,6 @@
 /*
 
-	migrate to InnoDB
+	migrate to InnoDB - v1.2
 	converts MyISAM and Aria and whatever else you may have as engine, to InnoDB
 	It replaces Engine=... in CREATE TABLE, and also converts any (var)char longer than
 	the specified length to a (TINY)TEXT. This to avoid the row too large error.
@@ -97,6 +97,7 @@ char **argv;
 		}
 		printf(" %s\n", buf);
 	}
+	fflush(stdout);
 }
 
 static void read_create_table(t, maxlen, l, fn)
