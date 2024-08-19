@@ -1,0 +1,6 @@
+Partition management tool originally developed by PalominoDB, inc. 
+that I have adopted myself since few years.
+
+For el9 (Rocky 9, etc) and later, on MariaDB, please use the el9 version of the script,
+which leverages the DBD::MariaDB module instead of the old DBD::mysql one, which does not
+work anymore.
