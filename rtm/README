@@ -1,0 +1,35 @@
+
+RTM - a realtime transaction monitor for MariaDB
+
+A small script that will behave much InnoTop, but instead of showing you tons of uninteresting information 
+it will focus on transactions, with a view at a glance of the workload in real-time.
+
+Can work interactively, or can be used in batch mode (--quiet) with --kill or --snap-if-waiting to monitor or
+control a problematic workload.
+
+As a bonus, a small C program that will help find transactions that took more than X seconds from a binlog file.
+
+usage: ./rtm [ options ... ]
+
+Valid options:
+
+--host			hostname for connection to target instance
+--port			port for connection to target instance
+--user			user for connection to target instance
+--password		password for connection to target instance
+--socket		socket for connection to target instance
+--interval		refresh interval (1-60 seconds)
+--all-transactions	include just started transactions (lifetime < 1s)
+--processlist		include info from processlist
+--kill			kill transactions running since X seconds or more (30-1800)
+--locking-only		filter transactions holding row locks
+--waiting-only		filter transactions waiting to acquire a lock
+--snap-if-waiting	take a snapshot if transaction(s) waiting X seconds or more
+--snapshot-dir		directory to use for snapshots (default /tmp)
+--use-file		display info from given file (useful with snapshots)
+--name-resolve-on	when reading from file, assume server has skip_name_resolve=OFF
+--logfile		log activity about snapshots and kills
+--quiet			suppresses output; useful with --kill
+--help			this help
+
+

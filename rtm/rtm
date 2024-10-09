@@ -1,0 +1,570 @@
+#!/bin/bash
+#
+#	RTM - Realtime Transactions Monitor
+#	(c) 2023 Rick Pizzi, pizzi@leopardus.com
+#
+VERSION=1.2.6
+PROCLIST_MIN_TERM_SIZE=185
+HEADER_LINES=5
+LANG=
+
+pretty_locks()
+{
+        if [ $1 -lt 1000000 ]
+        then
+                p_locks=$1
+                return
+        fi
+        m=$(($1/1000000))
+        r=$(($1-m*1000000))
+        d=$((r/10000))
+	p_locks="$m.${d}M"
+}
+
+pretty_time()
+{
+	t=$1
+	h=$((t/3600))
+	m=$(((t-h*3600)/60)) 
+	s=$((t-h*3600-m*60))
+}
+
+init_terminal()
+{
+	term_width=$(tput cols)
+	term_height=$(tput lines)
+	term_bold=$(tput bold)
+	term_rev=$(tput rev)
+	term_reset=$(tput sgr0)
+}
+
+check_terminal_width()
+{
+	[ $term_width -lt $PROCLIST_MIN_TERM_SIZE ] && return 1 || return 0
+}
+
+pak()
+{
+	echo $1
+	echo -n "Hit any key to continue "
+	read -n 1 junk
+}
+
+help_menu()
+{
+	scr_menu_opt=(
+		"A=all transactions ($all)"
+		"I=change refresh interval (${refresh}s)"
+		"K=kill transaction"
+		"L=locking only ($lockingonly)"
+		"O=older first ($olderfirst)"
+		"P=processlist info ($processlist)"
+		"S=take snapshot"
+		"W=waiting only ($waitingonly)"
+		"Q=quit monitor"
+	)
+	echo -n "keys: "
+	p=6
+	for entry in "${scr_menu_opt[@]}"
+	do
+		if [ $((p+${#entry})) -gt $term_width ]
+		then
+			echo
+			tl=$((tl+1))
+			echo -n "      "
+			p=6
+		fi
+		echo -n "$entry  "
+		p=$((p+${#entry}+2))
+	done
+	echo
+	tl=$((tl+1))
+}
+
+header()
+{
+	printf "$term_bold%-63s $term_reset" "MariaDB Realtime Transactions Monitor v$VERSION"
+	case $hdrmsg in
+		1)
+			printf "$term_rev%-30s$term_reset " "    *** SNAPSHOT TAKEN ***"
+			;;
+		2)
+			printf "$term_rev%-30s$term_reset " "snapshot $snapt"
+                        ;;
+		*)
+			printf "%-30s " $hostname 
+			;;
+	esac
+	printf "%$((term_width-125))s %s\n" " " "$(date)"
+	[ $arg_debug -eq 1 ] && echo "DEBUG: w=$term_width h=$term_height min=$PROCLIST_MIN_TERM_SIZE"
+	hdrmsg=0
+	tl=$HEADER_LINES
+	help_menu
+	printf "%-8s %-17s %-8s %-6s %-10s %-16s %-16s %-20s" " state" "   transaction ID" "  time" "locks" "thread ID" "IP address" "user" "InnoDB state" 
+	if [ "$processlist" = "yes" ]
+	then
+		printf " %-10s %-20s %6s %s\n" "command" "MariaDB state" "time" "query"
+	else
+		printf "\n"
+	fi
+	printf "%8s %-17s %-8s %-6s %-10s %-16s %-16s %-20s" "--------" "-----------------" "--------" "------" "----------" "----------------" "----------------" "--------------------"
+	if [ "$processlist" = "yes" ]
+	then
+		printf " %-10s %-20s %6s %s\n" "----------" "--------------------" "------" "----------------------------------------"
+	else
+		printf "\n"
+	fi
+}
+
+ask()
+{
+	while true
+	do
+		echo -n "$1 " 1>&2
+		case "$2" in
+			'number')
+				[ "$3" != "" ] && echo -n "($3-$4): "  1>&2 || echo -n ": " 1>&2
+				read ui
+				[ "$3" = "" -a "$ui" = "" ] && break
+				[ ! -z "${ui##*[!0-9]*}" ] || continue
+				if [ "$3" != "" ]
+				then
+					[ "$ui" -lt $3 -o $ui -gt $4 ] && continue
+				fi
+				echo $ui
+				break
+				;;
+			'yesno')
+				if [ "$3" != "" ]
+				then
+					case "$3" in
+						'yes') echo no;;
+						'no') echo yes;;
+					esac
+					break
+				fi
+				echo -n "(y/n): " 1>&2
+				read -n 1 ui
+				if [ "$ui" = "y" -o "$ui" = "n" ]
+				then
+					[ "$ui" = "y" ] && echo yes || echo no
+					break
+				fi
+				echo 1>&2
+				;;
+		esac
+	done
+}
+
+kill_transaction()
+{
+	[ "$1" = "" ] && return
+	found=$(echo "select 'found' from information_schema.processlist where id = $1" | mysql -ANr $connstr 2>/dev/null)
+	if [ $arg_quiet -eq 1 ]
+	then
+		if [ "$found" = "" ]
+		then
+			log INFO "tried to kill transaction $t_id, thread $t_thread_id, running since ${t_runtime}s but was not found" 
+		else
+			echo "kill $1" | mysql -ANr $connstr
+			log INFO "killed transaction $t_id, thread $t_thread_id, running since ${t_runtime}s" 
+		fi
+	else
+		if [ "$found" = "" ]
+		then
+			echo "thread ID $1 does not exist anymore"
+		else
+			echo "kill $1" | mysql -ANr $connstr
+			echo "transaction killed"
+		fi
+		pak
+	fi
+}
+
+get_nr()
+{
+	[ "$arg_use_file" = "" ] && arg_nr=$(echo "select 1 - @@skip_name_resolve" | mysql -ANr $connstr 2>/dev/null)
+	if [ $arg_nr -eq 0 ]
+	then
+		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._]*)(\s*)([A-Za-z0-9_\-]*)\s?(.*)$/\2 \5 \7 \8@/g"
+		localhost_edit="s/no_match__g//"
+	else
+		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._-]*) ([A-Za-z0-9\._]*) ([A-Za-z0-9_\-]*)\s?(.*)$/\2 \6 \7 \8@/g"
+		localhost_edit="s/localhost\s/localhost localhost /"
+	fi
+}
+
+snapshot()
+{
+	fn=$arg_snap_dir/rtm.snap.$(date '+%Y%m%d%H%M%S')
+	tail -n +5 $snapfile > $fn
+	[ $arg_quiet -eq 1 ] && log INFO "found transaction(s) waiting ${arg_snap}s or more, snapshot taken: $fn" || hdrmsg=1
+}
+
+log()
+{
+	[ "$arg_logfile" != "" ] && printf "%-20s %-10s %s\n" "$(date '+%Y-%m-%d %T')" $1 "$2" >> $arg_logfile || echo "$1: $2"
+}
+
+parse_arguments()
+{
+	arg_debug=0
+	arg_quiet=0
+	arg_snap=0
+	arg_nr=0
+	arg_snap_dir="/tmp"
+	argl=$(getopt -o x -u -l"help,quiet,logfile:,interval:,kill:,snap-if-waiting:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,socket:" -- $@ 2>$tmpf)
+	[ -s $tmpf ] && usage
+	argr=($argl)
+	i=0
+	while true
+	do
+		case "${argr[$i]}" in
+			'--quiet')
+				arg_quiet=1
+				;;
+			'--locking-only')
+				lockingonly="yes"
+				;;
+			'--waiting-only')
+				waitingonly="yes"
+				;;
+			'--help')
+				usage
+				;;
+			'--debug')
+				arg_debug=1
+				;;
+			'--name-resolve-on')
+				arg_nr=1
+				;;
+			'--use-file')
+				check_for_arg
+				arg_use_file=${argr[$((i+1))]}
+				;;
+			'--interval')
+				check_for_arg
+				arg_interval=${argr[$((i+1))]}
+				;;
+			'--all-transactions')
+				all="yes"	
+				;;
+			'--processlist')
+				check_terminal_width
+				if [ $? -eq 1 ]
+				then
+					echo "--processlist requires a terminal at least $PROCLIST_MIN_TERM_SIZE chars wide" 1>&2
+					exit 1
+				fi
+				processlist="yes"	
+				;;
+			'--kill')
+				check_for_arg
+				arg_kill=${argr[$((i+1))]}
+				[ ! -z "${arg_kill##*[!0-9]*}" ] || usage
+				;;
+			'--snap-if-waiting')
+				check_for_arg
+				arg_snap=${argr[$((i+1))]}
+				[ ! -z "${arg_snap##*[!0-9]*}" ] || usage
+				;;
+			'--snapshot-dir')
+				check_for_arg
+				arg_snap_dir=${argr[$((i+1))]}
+				;;
+			'--logfile')
+				check_for_arg
+				arg_logfile=${argr[$((i+1))]}
+				;;
+			'--host')
+				check_for_arg
+				arg_host=${argr[$((i+1))]}
+				;;
+			'--port')
+				check_for_arg
+				arg_port=${argr[$((i+1))]}
+				[ ! -z "${arg_port##*[!0-9]*}" ] || usage
+				;;
+			'--user')
+				check_for_arg
+				arg_user=${argr[$((i+1))]}
+					;;
+			'--password')
+				check_for_arg
+				arg_password=${argr[$((i+1))]}
+				;;
+			'--socket')
+				check_for_arg
+				arg_socket=${argr[$((i+1))]}
+				;;
+		esac
+		i=$((i+1))
+		[ $i -eq  ${#argr[@]} ] && break
+	done
+	if [ "$arg_interval" != "" ]
+	then
+		[ ! -z "${arg_interval##*[!0-9]*}" ] || usage
+		[ $arg_interval -lt 1 -o $arg_interval -gt 60 ] && usage
+		refresh=$arg_interval
+	fi
+	if [ "$arg_kill" != "" ]
+	then
+		[ ! -z "${arg_kill##*[!0-9]*}" ] || usage
+		#[ $arg_kill -lt 30 -o $arg_kill -gt 1800 ] && usage
+	fi
+	if [ $arg_quiet -eq 1 ]
+	then
+		log NOTICE "quiet mode - realtime transaction info suppressed"
+	fi
+	if [ "$arg_host" != "" ]
+	then
+		if [ "$arg_user" = "" ]
+		then
+			echo "--host requires --user and --password"
+			exit 1
+		fi
+		if [ "$arg_password" = "" ]
+		then
+			echo "--host requires --user and --password"
+			exit 1
+		fi
+	fi
+	if [ "$arg_user" != "" ]
+	then
+		if [ "$arg_host" = "" ]
+		then
+			echo "--user requires --host"
+			exit 1
+		fi
+		if [ "$arg_password" = "" ]
+		then
+			echo "--user requires --password"
+			exit 1
+		fi
+	fi
+	if [ "$arg_password" != "" ]
+	then
+		if [ "$arg_host" = "" ]
+		then
+			echo "--password requires --host"
+			exit 1
+		fi
+		if [ "$arg_user" = "" ]
+		then
+			echo "--password requires --user"
+			exit 1
+		fi
+	fi
+	if [ "$arg_host" != "" ]
+	then
+		connstr="-h $arg_host -u $arg_user -p$arg_password"
+		if [ "$arg_socket" != "" ]
+		then
+			connstr="$connstr -S $arg_socket"
+		fi
+		if [ "$arg_port" != "" ]
+		then
+			connstr="$connstr -P $arg_port"
+		fi
+	fi
+	if [ "$arg_snap_dir" != "" ]
+	then
+		if [ ! -d $arg_snap_dir ]
+		then
+			echo "$arg_snap_dir does not exist, please create it"
+			exit 1
+		fi
+	fi
+	if [ $arg_nr -eq 1 -a "$arg_use_file" = "" ]
+	then
+			echo "--name-resolve-on is only meaningful when --use-file is specified"
+			exit 1
+	fi
+}
+
+check_for_arg()
+{
+	[ ${argr[$((i+1))]:0:2} != "--" ] && return
+	reqmsg="getopt: option '${argr[$i]}' requires an argument"
+	usage
+}
+
+usage()
+{
+	printf "\n${term_bold}MariaDB Realtime Transactions Monitor v$VERSION\n\n$term_reset"
+	[ -s $tmpf ] && cat $tmpf
+	[ "$reqmsg" != "" ] && echo -e $reqmsg
+	printf "usage: $0 [ options ... ]\n\n"
+	printf "Valid options:\n\n"
+	printf -- "--host\t\t\thostname for connection to target instance\n"
+	printf -- "--port\t\t\tport for connection to target instance\n"
+	printf -- "--user\t\t\tuser for connection to target instance\n"
+	printf -- "--password\t\tpassword for connection to target instance\n"
+	printf -- "--socket\t\tsocket for connection to target instance\n"
+	printf -- "--interval\t\trefresh interval (1-60 seconds)\n"
+	printf -- "--all-transactions\tinclude just started transactions (lifetime < 1s)\n"
+	printf -- "--processlist\t\tinclude info from processlist\n"
+	printf -- "--kill\t\t\tkill transactions running since X seconds or more (30-1800)\n"
+	printf -- "--locking-only\t\tfilter transactions holding row locks\n"
+	printf -- "--waiting-only\t\tfilter transactions waiting to acquire a lock\n"
+	printf -- "--snap-if-waiting\ttake a snapshot if transaction(s) waiting X seconds or more\n"
+	printf -- "--snapshot-dir\t\tdirectory to use for snapshots (default /tmp)\n"
+	printf -- "--use-file\t\tdisplay info from given file (useful with snapshots)\n"
+	printf -- "--name-resolve-on\twhen reading from file, assume server has skip_name_resolve=OFF\n"
+	printf -- "--logfile\t\tlog activity about snapshots and kills\n"
+	printf -- "--quiet\t\t\tsuppresses output; useful with --kill\n"
+	printf -- "--help\t\t\tthis help\n"
+	printf "\n"
+	exit 1
+}
+
+init()
+{
+	[ $arg_quiet -eq 1 ] && return
+	hostname=$(hostname)
+	[ $arg_debug -eq 0 ] && clear
+	header
+}
+
+access_check()
+{
+	mysqladmin $connstr ping >/dev/null 2>$tmpf
+	grep ^error $tmpf && exit 1
+	rm -f $tmpf
+}
+
+screen_update()
+{
+	header > $scrh_tmpf
+	[ $arg_debug -eq 0 ] && clear
+	fgrep -avh __SNAP $scrh_tmpf $scrb_tmpf
+}
+
+refresh=3
+hdrmsg=0
+tl=0
+all=no
+processlist=no
+olderfirst=yes
+lockingonly=no
+waitingonly=no
+tmpf=/tmp/rtw.$$
+scrh_tmpf=/tmp/rtw_sh.$$
+scrb_tmpf=/tmp/rtw_sb.$$
+snapfile=/tmp/rtw.sn.$$
+trap 'rm -f $tmpf $scrh_tmpf $scrb_tmpf $snapfile' 0
+
+init_terminal
+parse_arguments $*
+access_check
+get_nr
+init
+while true
+do
+	if [ "$arg_use_file" != "" ]
+	then
+		cat $arg_use_file | tee $scrb_tmpf | grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" 2>/tmp/grepout | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id" > $tmpf 
+		snapt=$(egrep -a "^(.*)0x(.*)INNODB MONITOR OUTPUT$" $scrb_tmpf | sed -re "s/^(.*) 0x(.*)$/\1/")
+		hdrmsg=2
+	else
+		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
+	fi
+	if [ -s $tmpf ]
+	then 
+		[ "$olderfirst" = "yes" ] && sortorder="-r" || sortorder=""
+		sed -re "s/^---(.*)\s(.*), (ACTIVE|ACTIVE \(PREPARED\)) ([0-9]*) sec(.*)/\2 \4 /g" -e "s/^([RL0-9])(.*) lock (.*), (.*), ([0-9]*) row lock(.*)/\1 \5 /g" -e "$localhost_edit" -e "$parser" < $tmpf | tr -d "\n" | tr "@" "\n" | sort -nk2 $sortorder | while read  t_id t_runtime t_ts t_locks t_thread_id t_ipaddr t_user t_extra
+		do
+			#[[ $t_runtime != ?(-)+([0-9]) ]] && cp $tmpf /tmp/rtm.debug
+			if [ "$t_ipaddr $t_user" = "thread id" ]
+			then
+				t_thread_id=$(echo $t_extra | sed -re "s/^([0-9]*)(.*)$/\1/")
+				t_user="system user"
+				t_ipaddr=""
+				t_extra=$(echo $t_extra | sed -re "s/^(.*), query id (.*) (.*)$/\3/")
+			fi
+			if [ "$t_user" = "" ]
+			then
+				t_extra="$t_ipaddr"
+				t_ipaddr=""
+			fi
+			if [ $tl -eq $term_height ]
+			then
+				echo -n "$term_rev some transactions suppressed due to screen size $term_reset "
+				break
+			fi
+			[ $t_runtime -eq 0 -a "$all" = "no" ] && continue
+			[ $t_locks -eq 0 -a "$lockingonly" = "yes" ] && continue
+			case "$t_ts" in
+				'R') 	t_ts="ROLLBACK"
+					t_ts_bold=$term_bold
+					;;
+				'L') 	t_ts="WAITING"
+					[ $arg_snap -gt 0 -a $t_runtime -ge $arg_snap ] && echo "__SNAP"
+					t_ts_bold=$term_bold
+					;;
+				*) 	t_ts="RUNNING"
+					t_ts_bold=""
+					;;
+			esac
+			[ "$t_ts" != "WAITING" -a "$waitingonly" = "yes" ] && continue
+			if [ "$arg_kill" != "" ]
+			then
+				if [ $t_runtime -gt $arg_kill ]
+				then
+					kill_transaction $t_thread_id
+					continue 
+				fi
+			fi
+			if [ "$t_ipaddr" = "event_scheduler" ]
+			then
+				t_user=$t_ipaddr
+				t_ipaddr=""
+				t_extra=""
+			fi
+			pretty_time $t_runtime
+			pretty_locks $t_locks
+			[ "$t_extra" = "" ] && t_extra=" "
+			if [ $arg_quiet -eq 0 ]
+			then
+				if [ "$processlist" = "yes" ]
+				then
+					read p_command p_state p_time p_info <<<$(echo "select command, if(state <> '', replace(state, ' ', '_'), '-'), time, replace(replace(left(info, 37 + $((term_width-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', '') from information_schema.processlist where id = $t_thread_id" | mysql -ANr $connstr)
+					p_info=$(echo "$p_info" | tr "\t" " " | tr -s " ")
+					[ "$p_state" = "-" ] && p_state=" "
+					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %10d %-16s %-16.16s %-20.20s %-10s %-20s %6s %s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_command" "$p_state" $p_time "$p_info"
+				else
+					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
+				fi
+				tl=$((tl+1))
+			fi
+		done | tee $scrb_tmpf | fgrep -aq __SNAP && snapshot
+	else
+		cat /dev/null > $scrb_tmpf
+	fi
+	if [ $arg_quiet -eq 1 ]
+	then
+		sleep $refresh
+		continue
+	fi
+	screen_update
+	[ "$arg_use_file" != "" ] && break
+	read -s -t $refresh -n 1 ui
+	case "${ui,,}" in
+		'a') all=$(ask "all transactions" yesno $all);;
+		'i') refresh=$(ask "refresh interval" number 1 60);;
+		'k') kill_transaction $(ask "thread ID to kill" number);;
+		'l') lockingonly=$(ask "only locking transactions" yesno $lockingonly);;
+		'o') olderfirst=$(ask "older transactions first" yesno $olderfirst);;
+		'p') check_terminal_width && processlist=$(ask "processlist info" yesno $processlist) || pak "Insufficient terminal width";;
+		'q') echo; echo "Bye";;
+		's') snapshot;;
+		'w') waitingonly=$(ask "only waiting transactions" yesno $waitingonly);;
+	esac
+	case "${ui,,}" in
+		'a'|'l'|'o'|'p'|'s'|'w')
+			screen_update
+			sleep 1.5
+			;;
+	esac
+	[ "$ui" = "q" ] && break
+done
