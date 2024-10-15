@@ -112,7 +112,6 @@ safe_defaults()
 	setup_repl_only=0
 	enc_key_local=0
 	kill_query_time=0
-	skysql=0
 	status=0
 	level=0
 	expire_days=7
@@ -170,17 +169,17 @@ setup_sqlite_db()
   		echo "ref_full_backup varchar(40) DEFAULT NULL,"
   		echo "xid bigint DEFAULT NULL,"
   		echo "dumplist varchar(2000) DEFAULT NULL,"
-  		echo "skysql_pod varchar(64) DEFAULT NULL,"
-  		echo "skysql_bucket varchar(255) DEFAULT NULL,"
-  		echo "skysql_db varchar(64) DEFAULT NULL,"
+  		echo "kubernetes_pod varchar(64) DEFAULT NULL,"
+  		echo "kubernetes_bucket varchar(255) DEFAULT NULL,"
+  		echo "kubernetes_db varchar(64) DEFAULT NULL,"
   		echo "checkpoint varchar(64) DEFAULT NULL,"
 		echo "binlog_file varchar(64) DEFAULT NULL,"
 		echo "binlog_position varchar(64) DEFAULT NULL,"
 		echo "binlog_first varchar(64) DEFAULT NULL,"
 		echo "binlog_last varchar(64) DEFAULT NULL,"
   		echo "binlog_last_ts timestamp NULL DEFAULT NULL,"
-		echo "skysql_bucket_id varchar(64) DEFAULT NULL,"
-		echo "skysql_bucket_secret varchar(64) DEFAULT NULL,"
+		echo "kubernetes_bucket_id varchar(64) DEFAULT NULL,"
+		echo "kubernetes_bucket_secret varchar(64) DEFAULT NULL,"
   		echo "level13_alert tinyint DEFAULT NULL,"
 		echo "gtid_binlog_pos varchar(128) DEFAULT NULL,"
   		echo "datadir_size bigint DEFAULT NULL,"
@@ -206,9 +205,9 @@ patch_sqlite_db()
 			return
 			;;
 		'18') 	echo "ALTER TABLE backup_history ADD COLUMN dumplist varchar(2000) DEFAULT NULL;" | dbquery $1
-			echo "ALTER TABLE backup_history ADD COLUMN skysql_pod varchar(64) DEFAULT NULL;" | dbquery $1
-			echo "ALTER TABLE backup_history ADD COLUMN skysql_bucket varchar(256) DEFAULT NULL;" | dbquery $1
-			echo "ALTER TABLE backup_history ADD COLUMN skysql_db varchar(64) DEFAULT NULL;" | dbquery $1
+			echo "ALTER TABLE backup_history ADD COLUMN kubernetes_pod varchar(64) DEFAULT NULL;" | dbquery $1
+			echo "ALTER TABLE backup_history ADD COLUMN kubernetes_bucket varchar(256) DEFAULT NULL;" | dbquery $1
+			echo "ALTER TABLE backup_history ADD COLUMN kubernetes_db varchar(64) DEFAULT NULL;" | dbquery $1
 			echo "ALTER TABLE backup_history ADD COLUMN checkpoint varchar(64) DEFAULT NULL;" | dbquery $1
 			patch_sqlite_db $1
 			return
@@ -231,8 +230,8 @@ patch_sqlite_db()
 			patch_sqlite_db $1
 			return
 			;;
-		'28') 	echo "ALTER TABLE backup_history ADD COLUMN skysql_bucket_id varchar(64) DEFAULT NULL;" | dbquery $1
-			echo "ALTER TABLE backup_history ADD COLUMN skysql_bucket_secret varchar(64) DEFAULT NULL;" | dbquery $1
+		'28') 	echo "ALTER TABLE backup_history ADD COLUMN kubernetes_bucket_id varchar(64) DEFAULT NULL;" | dbquery $1
+			echo "ALTER TABLE backup_history ADD COLUMN kubernetes_bucket_secret varchar(64) DEFAULT NULL;" | dbquery $1
 			patch_sqlite_db $1
 			return
 			;;
@@ -273,7 +272,6 @@ curl_after()
 
 check_free_space()
 {
-	[ $skysql -eq 1 ] && return
 	if [ $disk_space_p_avail -eq 0 ]
 	then
 		echo "ERROR: filesystem is full for target directory $target."
@@ -744,14 +742,11 @@ purge_backups()
 		fi
 		echo "purging backup piece $1"
 		path=$(echo "select bulocation from backup_history where uuid = '$1';" | dbquery $DB)
-		if [ $skysql -eq 0 ]
+		if [ -d $path ]
 		then
-			if [ -d $path ]
-			then
-				rm -rf $path
-			else
-				remove_files $1
-			fi
+			rm -rf $path
+		else
+			remove_files $1
 		fi
 		echo "delete from backup_history where uuid = '$1';" | dbquery $DB
 		return
@@ -1318,11 +1313,11 @@ sqlite_inventory()
 	case "$1" in
 		'pretty'|'short') 
 			width="0 0 5 0 0 10 0 0 0 9"
-			echo -e ".width $width\nselect uuid as 'backup id', backup_tool as 'backup tool', case(level) when 0 then 'full' when 1 then 'incr' when 2 then 'dump' end as level, datetime(start_time) as 'start time        ', datetime(end_time) as 'end time           ', ((strftime('%s', end_time) - strftime('%s', start_time)) / 86400) || '+' || time(strftime('%s', end_time) - strftime('%s', start_time), 'unixepoch') as duration, last_lsn as 'last LSN', case when length(server_version) > 20 then substr(server_version,1,17) || '..' || substr(server_version, -1) else server_version end as 'server version', case when backup_size < 1000000 then substr('        ' || round(backup_size/1000.0, 2) || 'K', -10, 10) when backup_size between 1000000 and 999999999 then substr('        ' || round(backup_size/1000000.0, 2) || 'M', -10, 10) else substr('        ' || round(backup_size/1000000000.0, 2) || 'G', -10, 10) end as 'backup sz', case when datadir_size < 1000000 then substr('          ' || round(datadir_size/1000.0, 2) || 'K', -9, 9) when datadir_size between 1000000 and 999999999 then substr('          ' || round(datadir_size/1000000.0, 2) || 'M', -9, 9) else substr('          ' || round(datadir_size/1000000000.0, 2) || 'G', -9, 9) end as 'data size', case when status = 0 then 'succeeded' when status is null and runtime_id in ($g_r_id, $b_r_id) then 'running' else 'failed' end as status, case(level) when 2 then dumplist end as 'additional info' from backup_history $skyfilter order by start_time desc;" | inv_dbquery $DB 2>/dev/null | tee /tmp/bi$$
+			echo -e ".width $width\nselect uuid as 'backup id', backup_tool as 'backup tool', case(level) when 0 then 'full' when 1 then 'incr' when 2 then 'dump' end as level, datetime(start_time) as 'start time        ', datetime(end_time) as 'end time           ', ((strftime('%s', end_time) - strftime('%s', start_time)) / 86400) || '+' || time(strftime('%s', end_time) - strftime('%s', start_time), 'unixepoch') as duration, last_lsn as 'last LSN', case when length(server_version) > 20 then substr(server_version,1,17) || '..' || substr(server_version, -1) else server_version end as 'server version', case when backup_size < 1000000 then substr('        ' || round(backup_size/1000.0, 2) || 'K', -10, 10) when backup_size between 1000000 and 999999999 then substr('        ' || round(backup_size/1000000.0, 2) || 'M', -10, 10) else substr('        ' || round(backup_size/1000000000.0, 2) || 'G', -10, 10) end as 'backup sz', case when datadir_size < 1000000 then substr('          ' || round(datadir_size/1000.0, 2) || 'K', -9, 9) when datadir_size between 1000000 and 999999999 then substr('          ' || round(datadir_size/1000000.0, 2) || 'M', -9, 9) else substr('          ' || round(datadir_size/1000000000.0, 2) || 'G', -9, 9) end as 'data size', case when status = 0 then 'succeeded' when status is null and runtime_id in ($g_r_id, $b_r_id) then 'running' else 'failed' end as status, case(level) when 2 then dumplist end as 'additional info' from backup_history order by start_time desc;" | inv_dbquery $DB 2>/dev/null | tee /tmp/bi$$
 			;;
 		'binlogs')
 			width="1 0 0 5 0 0 9 9 28 13 0"
-			echo -e ".width $width\nselect case(level) when 0 then 'F' else ' ' end as f, uuid as 'backup id', backup_tool as 'backup tool', case(level) when 0 then 'full' when 1 then 'incr' when 2 then 'dump' end as level, datetime(start_time) as 'start time        ', datetime(end_time) as 'end time           ', case when backup_size < 1000000 then substr('        ' || round(backup_size/1000.0, 2) || 'K', -8, 8) when backup_size between 1000000 and 999999999 then substr('        ' || round(backup_size/1000000.0, 2) || 'M', -8, 8) else substr('        ' || round(backup_size/1000000000.0, 2) || 'G', -8, 8) end as 'disk size', case when status = 0 then 'succeeded' when status is null and runtime_id in ($g_r_id, $b_r_id) then 'running' else 'failed' end as status, case(level) when 3 then '' else binlog_file || ':' || binlog_position end as 'backup position', substr(binlog_first, -6) || '-' || substr(binlog_last, -6) as binlogs, binlog_last_ts as 'backup point-in-time'  from backup_history $skyfilter order by binlog_last_ts desc;" | dbquery -column -header $DB 2>/dev/null | tee /tmp/bi$$
+			echo -e ".width $width\nselect case(level) when 0 then 'F' else ' ' end as f, uuid as 'backup id', backup_tool as 'backup tool', case(level) when 0 then 'full' when 1 then 'incr' when 2 then 'dump' end as level, datetime(start_time) as 'start time        ', datetime(end_time) as 'end time           ', case when backup_size < 1000000 then substr('        ' || round(backup_size/1000.0, 2) || 'K', -8, 8) when backup_size between 1000000 and 999999999 then substr('        ' || round(backup_size/1000000.0, 2) || 'M', -8, 8) else substr('        ' || round(backup_size/1000000000.0, 2) || 'G', -8, 8) end as 'disk size', case when status = 0 then 'succeeded' when status is null and runtime_id in ($g_r_id, $b_r_id) then 'running' else 'failed' end as status, case(level) when 3 then '' else binlog_file || ':' || binlog_position end as 'backup position', substr(binlog_first, -6) || '-' || substr(binlog_last, -6) as binlogs, binlog_last_ts as 'backup point-in-time'  from backup_history order by binlog_last_ts desc;" | dbquery -column -header $DB 2>/dev/null | tee /tmp/bi$$
 			;;
 		*) echo "select * from backup_history order by start_time desc;" | inv_dbquery $DB 2>/dev/null | tee /tmp/bi$$
 			;;
