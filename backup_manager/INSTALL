@@ -1,0 +1,16 @@
+INSTALLATION INSTRUCTIONS
+=========================
+
+To install, follow these steps:
+
+1) become root user
+2) run backup_manager build-config, this will create a sample config file in /etc/mariadb
+3) tweak configuration to adapt it to your system, see comments in the file for help
+4) create an user for backup manager like this: GRANT SELECT, RELOAD, PROCESS, LOCK TABLES, REPLICATION CLIENT ON *.* TO 'backup'@'localhost' IDENTIFIED BY .... (10.5 onwards: add SLAVE MONITOR to the set)
+5) run a manual full backup to test the installation - if any package is missing the script will ask you to install it
+6) schedule the backups using a crontab file in /etc/cron.d/backup_manager, add this line in crontab file at top: PATH=/usr/bin:/bin:/usr/local/sbin
+
+To read documentation for the tool run backup_manager without any parameter.
+
+NOTE: on multi-cpu machines please set pigz -p parameter accordingly, this will cut on backup time sensibly.
+
