@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor
 #	(c) 2023 Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.2.6
+VERSION=1.2.7
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -213,7 +213,8 @@ parse_arguments()
 	arg_snap=0
 	arg_nr=0
 	arg_snap_dir="/tmp"
-	argl=$(getopt -o x -u -l"help,quiet,logfile:,interval:,kill:,snap-if-waiting:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,socket:" -- $@ 2>$tmpf)
+	arg_ask_pass=0
+	argl=$(getopt -o x -u -l"help,quiet,logfile:,interval:,kill:,snap-if-waiting:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
 	[ -s $tmpf ] && usage
 	argr=($argl)
 	i=0
@@ -293,6 +294,9 @@ parse_arguments()
 				check_for_arg
 				arg_password=${argr[$((i+1))]}
 				;;
+			'--ask-password')
+				arg_ask_pass=1
+				;;
 			'--socket')
 				check_for_arg
 				arg_socket=${argr[$((i+1))]}
@@ -316,6 +320,19 @@ parse_arguments()
 	then
 		log NOTICE "quiet mode - realtime transaction info suppressed"
 	fi
+	if [ $arg_ask_pass -eq 1 ]
+	then
+		stty -echo
+		echo -n "Enter password: "
+		read arg_password
+		stty echo
+		echo
+		if [ "$arg_password" = "" ]
+		then
+			echo "password is required."
+			exit 1
+		fi
+	fi
 	if [ "$arg_host" != "" ]
 	then
 		if [ "$arg_user" = "" ]
@@ -323,7 +340,7 @@ parse_arguments()
 			echo "--host requires --user and --password"
 			exit 1
 		fi
-		if [ "$arg_password" = "" ]
+		if [ "$arg_password" = "" -a $arg_ask_pass -eq 0 ]
 		then
 			echo "--host requires --user and --password"
 			exit 1
@@ -336,7 +353,7 @@ parse_arguments()
 			echo "--user requires --host"
 			exit 1
 		fi
-		if [ "$arg_password" = "" ]
+		if [ "$arg_password" = "" -a $arg_ask_pass -eq 0 ]
 		then
 			echo "--user requires --password"
 			exit 1
@@ -400,6 +417,7 @@ usage()
 	printf -- "--port\t\t\tport for connection to target instance\n"
 	printf -- "--user\t\t\tuser for connection to target instance\n"
 	printf -- "--password\t\tpassword for connection to target instance\n"
+	printf -- "--ask-password\t\tpassword for connection to target will be asked on terminal\n"
 	printf -- "--socket\t\tsocket for connection to target instance\n"
 	printf -- "--interval\t\trefresh interval (1-60 seconds)\n"
 	printf -- "--all-transactions\tinclude just started transactions (lifetime < 1s)\n"
