@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor
 #	(c) 2023 Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.2.7
+VERSION=1.2.8
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -446,6 +446,7 @@ init()
 
 access_check()
 {
+	[ "$arg_use_file" != "" ] && return
 	mysqladmin $connstr ping >/dev/null 2>$tmpf
 	grep ^error $tmpf && exit 1
 	rm -f $tmpf
