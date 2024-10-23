@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.29"
+BM_VERSION="4.5.30"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -461,6 +461,7 @@ validate_point_in_time()
 	else
 		echo "'$requested_binlog_ts'"
 	fi
+	echo "Requested point-in-time found in backup piece $target_binlog_backup_id."
 	[ "$2" = "" ] && confirm_operation
 	[ "$target_binlog_backup_id" != "$uuid" ] && point_in_time=1
 }
@@ -518,7 +519,7 @@ check_pit_availability()
 			target_binlog_backup_id=$uuid
 			return
 		fi
-                pt=$(echo "select uuid from backup_history where binlog_last_ts >= '$requested_binlog_ts' and level in (0,1,3) and status = 0 limit 1;" | dbquery $DB)
+		 pt=$(echo "select uuid from backup_history where ((binlog_last_ts = '$requested_binlog_ts' and level in (0,1)) or (binlog_last_ts > '$requested_binlog_ts' and level = 3)) and status = 0 limit 1;" | dbquery $DB)
                 ref=$(echo "select ref_full_backup from backup_history where uuid = '$pt';" | dbquery $DB)
 		if [ "$ref" = "" ]
 		then
