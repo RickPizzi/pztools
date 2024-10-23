@@ -17,6 +17,7 @@ Valid options:
 --port			port for connection to target instance
 --user			user for connection to target instance
 --password		password for connection to target instance
+--ask-password		password for connection is asked on tty
 --socket		socket for connection to target instance
 --interval		refresh interval (1-60 seconds)
 --all-transactions	include just started transactions (lifetime < 1s)
