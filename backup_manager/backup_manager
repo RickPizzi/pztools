@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.27r"
+BM_VERSION="4.5.28"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2554,6 +2554,7 @@ position_from_binlog()
 {
 	mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER $1 | fgrep -v Warning | fgrep -C10 -m1 "Start: binlog" > $aux_log
 	lb_ts=$(grep "GTID " $aux_log | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)\s+([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/ 0\2/")
+	[ "$lb_ts" = "" ] && lb_ts=$(grep "created " $aux_log | sed -re "s/^#([0-9][0-9])([0-9][0-9])([0-9][0-9])(\s*)([0-9]*):([0-9]*):([0-9]*)\s(.*)$/20\1-\2-\3 \5:\6:\7/" -e "s/( )([0-9]:)/ 0\2/")
         binlog_pos=$(grep "^# at " $aux_log | head -1 | sed -re "s/^# at ([0-9]*)/\1/")
 	gtid_binlog_pos=$(cat $aux_log | tr -d "\n" | tr -d "#" | sed -re "s/(.*)\[(.*)\](.*)/\2/")
 }
