@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.28"
+BM_VERSION="4.5.29"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -767,7 +767,7 @@ purge_backups()
 
 check_home_config()
 {
-	[ "$LOGNAME" = "root" ] && return
+	[ $(id -u) -eq 0 ] && return
 	[ -f $HOME/$CONFIGNAME ] && CONFIGFILE=$HOME/$CONFIGNAME
 }
 
@@ -1613,7 +1613,7 @@ extract_binlog_piece()
 
 check_root()
 {
-        if [ "$LOGNAME" != "root" ]
+	if [ $(id -u) -ne 0 ]
         then
                 echo "the $1 command requires superuser privileges. Exiting."
                 exit 1
@@ -2420,7 +2420,7 @@ get_lsn()
 
 build_config()
 {
-	if [ "$LOGNAME" != "root" ]
+	if [ $(id -u) -ne 0 ]
 	then
 		CONFIGFILE=$HOME/$CONFIGNAME
 	else
@@ -2590,7 +2590,7 @@ if [ ! -f $CONFIGFILE ]
 then
 	[ $# -eq 0 ] && self_doc
 	echo "$CONFIGFILE not found. You can build it with: $0 build-config."
-	[ "$LOGNAME" != "root" ] && echo "Since you are not running as root, it will be created in your home directory."
+	[ $(id -u) -ne 0 ] && echo "Since you are not running as root, it will be created in your home directory."
 	exit 1
 fi
 [ "$1" = "help" ] && self_doc
