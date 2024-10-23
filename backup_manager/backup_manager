@@ -1442,9 +1442,8 @@ do_restore()
 	fi
 	convert_incr_to_full $*
 	what="restore"
-	lv=0
 	uuid=$1
-	if [ $(echo "select count(*) from backup_history where uuid = '$1' and level = $lv and status = 0;" | dbquery $DB) -eq 0 ]
+	if [ $(echo "select count(*) from backup_history where uuid = '$1' and level in (0, 2) and status = 0;" | dbquery $DB) -eq 0 ]
 	then
 		echo "full backup with id '$1' not found, or not valid."
 		exit 1
