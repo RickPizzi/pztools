@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor
 #	(c) 2023 Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.2.8
+VERSION=1.2.9
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -15,10 +15,10 @@ pretty_locks()
                 p_locks=$1
                 return
         fi
-        m=$(($1/1000000))
-        r=$(($1-m*1000000))
+        mi=$(($1/1000000))
+        r=$(($1-mi*1000000))
         d=$((r/10000))
-	p_locks="$m.${d}M"
+	p_locks="$mi.${d}M"
 }
 
 pretty_time()
