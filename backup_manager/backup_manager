@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.31"
+BM_VERSION="4.5.32"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -378,7 +378,7 @@ apply_binlogs()
 	if [ $? -ne 0 ]
 	then
 		echo "ERROR: unable to start MariaDB auxiliary instance. More info: $target/backup_manager_mysqld.err"
-		echo "Aborting binlogs application."
+		echo "Aborting restore."
 		return 1
 	fi
 	[ ! -d $bxfolder ] && mkdir $bxfolder
@@ -390,7 +390,7 @@ apply_binlogs()
 		last_seqno=$(echo "select substr(binlog_last, -6) from backup_history where uuid = '$bp';" | dbquery $DB)
 		[ $last_seqno -lt $wanted_seqno ] && continue
 		echo "extracting binlog backup $bp"
-		extract_binlog_piece $bp  || break
+		extract_binlog_piece $bp  || return 1
 		[ $scan_complete -eq 1 ] && break
 		[ "$bp" = "$target_binlog_backup_id" ] && break
 		[ "$last_file" != "" ] && break
@@ -1542,7 +1542,7 @@ extract_binlog_piece()
 	[ "$key" != "" ] && export enc_key="$key"
 	if [ ! -f $path ]
 	then
-		echo "ERROR: binlogs backup archive not found. Aborting binlogs application."
+		echo "ERROR: binlogs backup archive not found. Aborting restore."
 		kill $instance 2>/dev/null
 		return 1
 	fi
@@ -1556,7 +1556,7 @@ extract_binlog_piece()
 		scan_binlog_archive
 		if [ "$last_b" = "" ]
  		then
- 			echo "ERROR: required binlog $bf_start_file not available. Aborting binlogs application."
+ 			echo "ERROR: required binlog $bf_start_file not available. Aborting restore."
  			kill $instance 2>/dev/null
  			return 1
  		fi
@@ -1581,7 +1581,7 @@ extract_binlog_piece()
 				echo
 				echo "ERROR: apply of binary log $bf failed!"
 				cat $aux_log
-				echo "Aborting binary log application."
+				echo "Aborting restore."
 				kill $instance 2>/dev/null
 				return 1
 			fi
@@ -1598,7 +1598,7 @@ extract_binlog_piece()
 				echo
 				echo "ERROR: apply of binary log $bf failed!"
 				cat $aux_log
-				echo "Aborting binary log application."
+				echo "Aborting restore."
 				kill $instance 2>/dev/null
 				return 1
 			fi
@@ -2128,7 +2128,7 @@ perform_xtra_restore()
 	if [ $status -eq 0 -a $point_in_time -eq 1 ]
 	then
 		bxfolder=$target/.backupmanager
-		apply_binlogs
+		apply_binlogs || exit 1
 	        echo "Done applying binary logs."
 	fi
 }
@@ -2278,7 +2278,7 @@ perform_maria_restore()
 	if [ $status -eq 0 -a $point_in_time -eq 1 ]
 	then
 		bxfolder=$target/.backupmanager
-		apply_binlogs
+		apply_binlogs || exit 1
 	        echo "Done applying binary logs."
 	fi
 }
@@ -2310,7 +2310,7 @@ perform_mariaunpacked_restore()
 		current_position $uuid
 		binlogs_starting_point=$uuid
 		bxfolder=$target/.backupmanager
-		apply_binlogs
+		apply_binlogs || exit 1
 	        echo "Done applying binary logs."
 	else
 		echo "The data at $target is ready for use."
