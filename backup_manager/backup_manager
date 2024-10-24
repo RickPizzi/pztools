@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.32"
+BM_VERSION="4.5.33"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -126,6 +126,7 @@ safe_defaults()
 	skip_notification=0
 	custom_config=0
 	binlog_flush_pct=10
+	server_path="/usr/sbin/mysqld"
 }
 
 setup_db()
@@ -964,6 +965,7 @@ parse_config()
 	grep -q "^kill_query_time" $CONFIGFILE && kill_query_time=$(grep "^kill_query_time" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^open_files_limit" $CONFIGFILE && ulimit=$(grep "^open_files_limit" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^binlog_flush_pct" $CONFIGFILE && binlog_flush_pct=$(grep "^binlog_flush_pct" $CONFIGFILE | cut -d"=" -f2)
+        grep -q "^server_path" $CONFIGFILE && server_path=$(grep "^server_path" $CONFIGFILE | cut -d"=" -f2)
 
 	if [ "$host" = "" -o "$user" = "" ]
 	then
@@ -2476,7 +2478,7 @@ mariadb_instance()
 			echo -n "starting MariaDB auxiliary instance on $target... "
 			echo "server_id=987654321" >> $target/backup-my.cnf
 			echo "lower_case_table_names=$case_insens" >> $target/backup-my.cnf
-			/usr/sbin/mysqld --defaults-file=$target/backup-my.cnf  --innodb_file_per_table  --skip-grant-tables --basedir=/usr --datadir=$target --plugin-dir=/usr/lib64/mysql/plugin --user=root --log-error=$target/backup_manager_mysqld.err $limit_str --pid-file=$target/mysql.pid --socket=/tmp/backup_manager.sock --port=65432 2>> $target/backup_manager_mysqld.err &
+			$server_path --defaults-file=$target/backup-my.cnf  --innodb_file_per_table  --skip-grant-tables --basedir=/usr --datadir=$target --plugin-dir=/usr/lib64/mysql/plugin --user=root --log-error=$target/backup_manager_mysqld.err $limit_str --pid-file=$target/mysql.pid --socket=/tmp/backup_manager.sock --port=65432 2>> $target/backup_manager_mysqld.err &
 			instance=$!
 			echo "(pid $instance)"
 			sleep 10
