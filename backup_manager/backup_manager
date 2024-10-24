@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.30"
+BM_VERSION="4.5.31"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1212,7 +1212,7 @@ perform_binlogs_backup()
 		echo "Backing up binary log files" 
 		echo "Files in this backup: $binlog_list"
 		cd $(dirname $binlog_base)
-		tar cf - $binlog_list 2>$error_log | $compressor | $encryptor > $tt/$fn
+		tar cf - $binlog_list 2>$error_log | $compressor | $encryptor 2>/dev/null > $tt/$fn
 		if [ -s $error_log ]
 		then
 			status=1
@@ -1546,7 +1546,7 @@ extract_binlog_piece()
 		kill $instance 2>/dev/null
 		return 1
 	fi
-	cat $path | $unencryptor | $uncompressor | tar xf -
+	cat $path | $unencryptor 2>/dev/null | $uncompressor | tar xf -
 	first_b=$(basename $(ls -1 $bxfolder/* | head -1))
 	last_b=$(basename $(ls -1 $bxfolder/* | tail -1))
 	if [ "$requested_binlog_file" != "" ]
@@ -1740,13 +1740,13 @@ perform_maria_backup()
 	[ $kill_query_time -gt 0 ] && kill_str="--kill-long-queries-timeout=$kill_query_time --kill-long-query-type=SELECT"
 	case $level in
 		0)
-			mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor > $tt/$fn &
+			mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
 		1)
 			cp $target/checkpoints/mariabackup/xtrabackup_checkpoints /tmp
-			mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor > $tt/$fn &
+			mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
@@ -1819,13 +1819,13 @@ perform_xtra_backup()
 	[ $kill_query_time -gt 0 ] && kill_str="--kill-long-queries-timeout=$kill_query_time --kill-long-query-type=SELECT"
 	case $level in
 		0)
-			xtrabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor > $tt/$fn &
+			xtrabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/xtrabackup 2>/dev/null
 			;;
 		1)
 			cp $target/checkpoints/xtrabackup/xtrabackup_checkpoints /tmp
-			xtrabackup --backup $galera_str $kill_str --incremental-basedir=$target/checkpoints/xtrabackup --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor > $tt/$fn &
+			xtrabackup --backup $galera_str $kill_str --incremental-basedir=$target/checkpoints/xtrabackup --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/xtrabackup 2>/dev/null
 			;;
@@ -1876,7 +1876,7 @@ perform_mysqldump_backup()
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
 	[ $master_position -eq 1 ] && mp_str="--dump-slave=2"
-	$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host -P $port $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor > $tt/$fn &
+	$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host -P $port $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 	run_with_timeout
 	update_backup_status
 }
@@ -1898,7 +1898,7 @@ perform_mysqldump_restore()
 	path=$(echo "select bulocation from backup_history where uuid = '$uuid';" | dbquery $DB)
 	key=$(echo "select cryptkey from backup_history where uuid = '$uuid';" | dbquery $DB)
 	[ "$key" != "" ] && export enc_key="$key"
-	cat $path | $unencryptor | $uncompressor
+	cat $path | $unencryptor 2>/dev/null | $uncompressor
 	status=$?
 }
 
@@ -2069,9 +2069,9 @@ perform_xtra_restore()
 		mkdir -p $target/full
 		echo -n "extracting full backup $uuid... "
 		echo "--> cat $path | $unencryptor | $uncompressor | xbstream -p $parallelism -x -v -C $target/full" >> $logfile
-		cat $path | $unencryptor | $uncompressor | xbstream -p $parallelism -x -v -C $target/full 2>> $logfile
+		cat $path | $unencryptor 2>/dev/null | $uncompressor | xbstream -p $parallelism -x -v -C $target/full 2>> $logfile
 	else
-		cat $path | $unencryptor | $uncompressor 2>> $logfile
+		cat $path | $unencryptor 2>/dev/null | $uncompressor 2>> $logfile
 		status=$?
 		return
 	fi
@@ -2098,7 +2098,7 @@ perform_xtra_restore()
 		echo -n "extracting incremental backup $id... "
 		mkdir -p $target/$incdir
 		echo "--> cat $path | $unencryptor | $uncompressor | xbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
-		cat $path | $unencryptor | $uncompressor | xbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
+		cat $path | $unencryptor 2>/dev/null | $uncompressor | xbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
@@ -2145,7 +2145,7 @@ perform_zsnapshot_restore()
 	key=$(echo "select cryptkey from backup_history where uuid = '$uuid';" | dbquery $DB)
 	[ "$key" != "" ] && export enc_key="$key"
 	echo -n "restoring full snapshot $uuid... "
-	cat $path | $unencryptor | $uncompressor | zfs recv -u ${target:1} 2>$aux_log
+	cat $path | $unencryptor 2>/dev/null | $uncompressor | zfs recv -u ${target:1} 2>$aux_log
 	if [ $? -ne 0 ]
 	then
 		echo
@@ -2178,7 +2178,7 @@ perform_zsnapshot_restore()
 		key=$(echo "select cryptkey from backup_history where uuid = '$id';" | dbquery $DB)
 		[ "$key" != "" ] && export enc_key="$key"
 		echo -n "restoring incremental snapshot $id... "
-		cat $path | $unencryptor | $uncompressor | zfs recv -u ${target:1} 2>$aux_log
+		cat $path | $unencryptor 2>/dev/null | $uncompressor | zfs recv -u ${target:1} 2>$aux_log
 		if [ $? -ne 0 ]
 		then
 			echo
@@ -2215,9 +2215,9 @@ perform_maria_restore()
 		echo -n "extracting full backup $uuid... "
 		mkdir -p $target/full
 		echo "--> cat $path | $unencryptor | $uncompressor | mbstream -p $parallelism -x -v -C $target/full" >> $logfile
-		cat $path | $unencryptor | $uncompressor | mbstream -p $parallelism -x -v -C $target/full 2>> $logfile
+		cat $path | $unencryptor 2>/dev/null | $uncompressor | mbstream -p $parallelism -x -v -C $target/full 2>> $logfile
 	else
-		cat $path | $unencryptor | $uncompressor 2>> $logfile
+		cat $path | $unencryptor 2>/dev/null | $uncompressor 2>> $logfile
 		status=$?
 		return
 	fi
@@ -2247,7 +2247,7 @@ perform_maria_restore()
 		mkdir -p $target/$incdir
 		rm -f /tmp/xtrabackup*
 		echo "--> cat $path | $unencryptor | $uncompressor | mbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
-		cat $path | $unencryptor | $uncompressor | mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
+		cat $path | $unencryptor 2>/dev/null | $uncompressor | mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
