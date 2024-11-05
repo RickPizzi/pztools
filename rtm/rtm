@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor
 #	(c) 2023 Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.2.9
+VERSION=1.3.1
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -491,16 +491,29 @@ do
 	if [ -s $tmpf ]
 	then 
 		[ "$olderfirst" = "yes" ] && sortorder="-r" || sortorder=""
-		sed -re "s/^---(.*)\s(.*), (ACTIVE|ACTIVE \(PREPARED\)) ([0-9]*) sec(.*)/\2 \4 /g" -e "s/^([RL0-9])(.*) lock (.*), (.*), ([0-9]*) row lock(.*)/\1 \5 /g" -e "$localhost_edit" -e "$parser" < $tmpf | tr -d "\n" | tr "@" "\n" | sort -nk2 $sortorder | while read  t_id t_runtime t_ts t_locks t_thread_id t_ipaddr t_user t_extra
+		sed -re "s/^---(.*)\s(.*), (ACTIVE|ACTIVE \(PREPARED\)) ([0-9]*) sec(.*)/\2 \4 /g" -e "s/^([RL0-9])(.*) lock (.*), (.*), ([0-9]*) row lock(.*)/\1 \5 /g" -e "$localhost_edit" -e "$parser" < $tmpf | tr -d "\n" | tr "@" "\n" | sort -nk2 $sortorder | while read  t_id t_runtime t_ts t_locks t_thread_id t_ipaddr t_user t_extra t_extra2
 		do
 			#[[ $t_runtime != ?(-)+([0-9]) ]] && cp $tmpf /tmp/rtm.debug
-			if [ "$t_ipaddr $t_user" = "thread id" ]
-			then
-				t_thread_id=$(echo $t_extra | sed -re "s/^([0-9]*)(.*)$/\1/")
-				t_user="system user"
-				t_ipaddr=""
-				t_extra=$(echo $t_extra | sed -re "s/^(.*), query id (.*) (.*)$/\3/")
-			fi
+			ext_d=0
+			case "$t_ipaddr" in
+				'thread')
+					t_thread_id=$(echo "$t_extra" | sed -re "s/^([0-9]*)(.*)$/\1/")
+					t_user="system user"
+					t_ipaddr=""
+					t_extra=$(echo "$t_extra" | sed -re "s/^(.*), query id (.*) (.*)$/\3/")
+					;;
+				'Waiting'|'closing'|'Delete_rows_log_event'|'Update_rows_log_event'|'Write_rows_log_event')
+					t_extra="$t_ipaddr $t_user $t_extra $t_extra2"
+					t_user="SQL_thread"
+					t_ipaddr=""
+					ext_d=1
+					;;
+				'event_scheduler')
+					t_user=$t_ipaddr
+					t_ipaddr=""
+					t_extra=""
+					;;
+			esac
 			if [ "$t_user" = "" ]
 			then
 				t_extra="$t_ipaddr"
@@ -534,12 +547,6 @@ do
 					continue 
 				fi
 			fi
-			if [ "$t_ipaddr" = "event_scheduler" ]
-			then
-				t_user=$t_ipaddr
-				t_ipaddr=""
-				t_extra=""
-			fi
 			pretty_time $t_runtime
 			pretty_locks $t_locks
 			[ "$t_extra" = "" ] && t_extra=" "
@@ -552,7 +559,8 @@ do
 					[ "$p_state" = "-" ] && p_state=" "
 					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %10d %-16s %-16.16s %-20.20s %-10s %-20s %6s %s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_command" "$p_state" $p_time "$p_info"
 				else
-					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
+					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %10d %-16s %-16.16s " "$t_ts" $t_id $h $m $s $p_locks $t_thread_id "$t_ipaddr" "$t_user"
+					[ $ext_d -eq 1 ] && printf "%-20s$term_reset\n" "$t_extra" || printf "%-20.20s$term_reset\n"
 				fi
 				tl=$((tl+1))
 			fi
