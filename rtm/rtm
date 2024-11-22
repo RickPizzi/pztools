@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor
 #	(c) 2023,2024 Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.4.1
+VERSION=1.4.2
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -527,7 +527,7 @@ do
 				t_extra="$t_ipaddr"
 				t_ipaddr=""
 			fi
-			if [ $tl -eq $term_height ]
+			if [ $tl -eq $term_height -a "$arg_use_file" = "" ]
 			then
 				echo -n "$term_rev some transactions suppressed due to screen size $term_reset "
 				break
