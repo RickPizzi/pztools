@@ -1,9 +1,9 @@
 #!/bin/bash
 #
 #	RTM - Realtime Transactions Monitor
-#	(c) 2023 Rick Pizzi, pizzi@leopardus.com
+#	(c) 2023,2024 Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.3.1
+VERSION=1.4.1
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -198,7 +198,7 @@ snapshot()
 {
 	fn=$arg_snap_dir/rtm.snap.$(date '+%Y%m%d%H%M%S')
 	tail -n +5 $snapfile > $fn
-	[ $arg_quiet -eq 1 ] && log INFO "found transaction(s) waiting ${arg_snap}s or more, snapshot taken: $fn" || hdrmsg=1
+	[ $arg_quiet -eq 1 ] && log INFO "snap condition(s) met, snapshot taken: $fn" || hdrmsg=1
 }
 
 log()
@@ -210,11 +210,12 @@ parse_arguments()
 {
 	arg_debug=0
 	arg_quiet=0
-	arg_snap=0
+	arg_snap_time=0
+	arg_snap_count=0
 	arg_nr=0
 	arg_snap_dir="/tmp"
 	arg_ask_pass=0
-	argl=$(getopt -o x -u -l"help,quiet,logfile:,interval:,kill:,snap-if-waiting:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
+	argl=$(getopt -o x -u -l"help,quiet,logfile:,interval:,kill:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
 	[ -s $tmpf ] && usage
 	argr=($argl)
 	i=0
@@ -264,10 +265,15 @@ parse_arguments()
 				arg_kill=${argr[$((i+1))]}
 				[ ! -z "${arg_kill##*[!0-9]*}" ] || usage
 				;;
-			'--snap-if-waiting')
+			'--snap-if-waiting-time')
 				check_for_arg
-				arg_snap=${argr[$((i+1))]}
-				[ ! -z "${arg_snap##*[!0-9]*}" ] || usage
+				arg_snap_time=${argr[$((i+1))]}
+				[ ! -z "${arg_snap_time##*[!0-9]*}" ] || usage
+				;;
+			'--snap-if-waiting-count')
+				check_for_arg
+				arg_snap_count=${argr[$((i+1))]}
+				[ ! -z "${arg_snap_count##*[!0-9]*}" ] || usage
 				;;
 			'--snapshot-dir')
 				check_for_arg
@@ -425,7 +431,8 @@ usage()
 	printf -- "--kill\t\t\tkill transactions running since X seconds or more (30-1800)\n"
 	printf -- "--locking-only\t\tfilter transactions holding row locks\n"
 	printf -- "--waiting-only\t\tfilter transactions waiting to acquire a lock\n"
-	printf -- "--snap-if-waiting\ttake a snapshot if transaction(s) waiting X seconds or more\n"
+	printf -- "--snap-if-waiting-time\ttake a snapshot if there are transactions waiting X seconds or more\n"
+	printf -- "--snap-if-waiting-count\ttake a snapshot if at least X transactions are waiting\n"
 	printf -- "--snapshot-dir\t\tdirectory to use for snapshots (default /tmp)\n"
 	printf -- "--use-file\t\tdisplay info from given file (useful with snapshots)\n"
 	printf -- "--name-resolve-on\twhen reading from file, assume server has skip_name_resolve=OFF\n"
@@ -486,6 +493,7 @@ do
 		snapt=$(egrep -a "^(.*)0x(.*)INNODB MONITOR OUTPUT$" $scrb_tmpf | sed -re "s/^(.*) 0x(.*)$/\1/")
 		hdrmsg=2
 	else
+		wc=0
 		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
 	fi
 	if [ -s $tmpf ]
@@ -531,7 +539,9 @@ do
 					t_ts_bold=$term_bold
 					;;
 				'L') 	t_ts="WAITING"
-					[ $arg_snap -gt 0 -a $t_runtime -ge $arg_snap ] && echo "__SNAP"
+					wc=$((wc+1))
+					[ $arg_snap_time -gt 0 -a $t_runtime -ge $arg_snap_time ] && echo "__SNAP"
+					[ $arg_snap_count -gt 0 -a $wc -ge $arg_snap_count ] && echo "__SNAP"
 					t_ts_bold=$term_bold
 					;;
 				*) 	t_ts="RUNNING"

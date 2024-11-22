@@ -25,7 +25,8 @@ Valid options:
 --kill			kill transactions running since X seconds or more (30-1800)
 --locking-only		filter transactions holding row locks
 --waiting-only		filter transactions waiting to acquire a lock
---snap-if-waiting	take a snapshot if transaction(s) waiting X seconds or more
+--snap-if-waiting-time	take a snapshot if there are transactions waiting X seconds or more
+--snap-if-waiting-count	take a snapshot if at least X transactions are waiting
 --snapshot-dir		directory to use for snapshots (default /tmp)
 --use-file		display info from given file (useful with snapshots)
 --name-resolve-on	when reading from file, assume server has skip_name_resolve=OFF
