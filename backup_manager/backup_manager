@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.34"
+BM_VERSION="4.5.35"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -939,6 +939,11 @@ backup_type()
 
 parse_config()
 {
+	host="$BACKUP_HOST"
+	port="$BACKUP_PORT"
+	user="$BACKUP_USER"
+	password="$BACKUP_PASSWORD"
+	socket="$BACKUP_SOCKET"
 	grep -q "^backup_host" $CONFIGFILE && host=$(grep "^backup_host" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^backup_port" $CONFIGFILE && port=$(grep "^backup_port" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^backup_user" $CONFIGFILE && user=$(grep "^backup_user" $CONFIGFILE | cut -d"=" -f2)
