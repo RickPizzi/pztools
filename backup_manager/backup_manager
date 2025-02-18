@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.35"
+BM_VERSION="4.5.36"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -977,44 +977,51 @@ parse_config()
         grep -q "^binlog_flush_pct" $CONFIGFILE && binlog_flush_pct=$(grep "^binlog_flush_pct" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^server_path" $CONFIGFILE && server_path=$(grep "^server_path" $CONFIGFILE | cut -d"=" -f2)
 
-	if [ "$host" = "" -o "$user" = "" ]
-	then
-		echo "Please set backup_host and backup_user in $CONFIGFILE."
-		exit 1
-	fi
-	if [ "$target" = "" ]
-	then
-		echo "Please set target_directory in $CONFIGFILE."
-			exit 1
-	fi
-	if [ ! -d "$target" ]
-	then
-		echo "Target directory $target does not exist."
-		exit 1
-	fi
-	if [ "$compressor" != "" ]
-	then
-		ct=$(which ${compressor/%\ */} 2>/dev/null)
-		if [ "$ct" = "" ]
-		then
-			echo "You have configured ${compressor/%\ */}, please install it first."
-			exit 1
-		fi
-	fi
-	if [ "$encryptor" != "" ]
-	then
-		ct=$(which ${encryptor/%\ */} 2>/dev/null)
-		if [ "$ct" = "" ]
-		then
-			echo "You have configured ${encryptor/%\ */}, please install it first."
-			exit 1
-		fi
-		if [ "$(which openssl 2>/dev/null)" = "" ]
-		then
-			echo "ERROR: This script requires the openssl package. Please install it."
-			exit 1
-		fi
-	fi
+	case "$1" in
+		'inventory'|'inv'|'list'|'purge')
+			;;
+		*)
+			if [ "$host" = "" -o "$user" = "" ]
+			then
+				echo "Please set backup_host and backup_user in $CONFIGFILE."
+				exit 1
+			fi
+			if [ "$target" = "" ]
+			then
+				echo "Please set target_directory in $CONFIGFILE."
+					exit 1
+			fi
+			if [ ! -d "$target" ]
+			then
+				echo "Target directory $target does not exist."
+				exit 1
+			fi
+			if [ "$compressor" != "" ]
+			then
+				ct=$(which ${compressor/%\ */} 2>/dev/null)
+				if [ "$ct" = "" ]
+				then
+					echo "You have configured ${compressor/%\ */}, please install it first."
+					exit 1
+				fi
+			fi
+			if [ "$encryptor" != "" ]
+			then
+				ct=$(which ${encryptor/%\ */} 2>/dev/null)
+				if [ "$ct" = "" ]
+				then
+					echo "You have configured ${encryptor/%\ */}, please install it first."
+					exit 1
+				fi
+				if [ "$(which openssl 2>/dev/null)" = "" ]
+				then
+					echo "ERROR: This script requires the openssl package. Please install it."
+					exit 1
+				fi
+			fi
+			;;
+	esac
+
 	lockfile=/tmp/backup_manager.lock
 	binlog_lockfile=/tmp/backup_manager_binlogs.lock
 	[ "$(which mysqlbinlog 2>/dev/null)" = "" ] && no_mysqlbinlog=1
