@@ -1174,7 +1174,7 @@ update_backup_status()
 		0) save_datadir_size;;
 		2) [ "$dumplist" = "ALL" ] && save_datadir_size;;
 	esac
-	[ "$webhook_script" != "" ] && eval $webhook_script $status
+	[ "$webhook_script" != "" ] && eval $webhook_script $tool $level $status
 }
 
 perform_backup()
