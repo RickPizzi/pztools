@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.36"
+BM_VERSION="4.5.37"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -978,7 +978,7 @@ parse_config()
         grep -q "^server_path" $CONFIGFILE && server_path=$(grep "^server_path" $CONFIGFILE | cut -d"=" -f2)
 
 	case "$1" in
-		'inventory'|'inv'|'list'|'purge')
+		'logs'|'validate-pit'|'inventory'|'inv'|'list'|'purge'|'print-latest'|'replication-info'|'version'|'print-latest-id'|'backup-type')
 			;;
 		*)
 			if [ "$host" = "" -o "$user" = "" ]
