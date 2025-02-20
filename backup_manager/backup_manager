@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.37"
+BM_VERSION="4.5.38"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -976,6 +976,7 @@ parse_config()
 	grep -q "^open_files_limit" $CONFIGFILE && ulimit=$(grep "^open_files_limit" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^binlog_flush_pct" $CONFIGFILE && binlog_flush_pct=$(grep "^binlog_flush_pct" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^server_path" $CONFIGFILE && server_path=$(grep "^server_path" $CONFIGFILE | cut -d"=" -f2)
+        grep -q "^webhook_script" $CONFIGFILE && webhook_script=$(grep "^webhook_script" $CONFIGFILE | cut -d"=" -f2)
 
 	case "$1" in
 		'logs'|'validate-pit'|'inventory'|'inv'|'list'|'purge'|'print-latest'|'replication-info'|'version'|'print-latest-id'|'backup-type')
@@ -1173,6 +1174,7 @@ update_backup_status()
 		0) save_datadir_size;;
 		2) [ "$dumplist" = "ALL" ] && save_datadir_size;;
 	esac
+	[ "$webhook_script" != "" ] && eval $webhook_script $status
 }
 
 perform_backup()
