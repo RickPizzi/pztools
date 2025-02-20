@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.39"
+BM_VERSION="4.5.40"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1174,7 +1174,7 @@ update_backup_status()
 		0) save_datadir_size;;
 		2) [ "$dumplist" = "ALL" ] && save_datadir_size;;
 	esac
-	[ "$notify_label" != "" ] && export BACKUP_LABEL="$notify_label"
+	[ "$customer" != "" ] && export BACKUP_LABEL="$customer"
 	[ "$webhook_script" != "" ] && eval $webhook_script $tool $level $status
 }
 
