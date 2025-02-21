@@ -2496,7 +2496,8 @@ check_server_path()
 	while true
 	do
 		[ -f $server_path ] && return
-		echo -n "NOTICE: server path '$server_path' does not exists. Please enter its path on this system: "
+		echo "NOTICE: could not find MariaDB server executable '$server_path'!"
+		echo -n "Please enter its location on this system (including filename): "
 		read server_path
 	done
 }
@@ -2505,10 +2506,10 @@ mariadb_instance()
 {
 	case "$1" in
 		'start')
+			check_server_path
 			echo -n "starting MariaDB auxiliary instance on $target... "
 			echo "server_id=987654321" >> $target/backup-my.cnf
 			echo "lower_case_table_names=$case_insens" >> $target/backup-my.cnf
-			check_server_path
 			$server_path --defaults-file=$target/backup-my.cnf  --innodb_file_per_table  --skip-grant-tables --basedir=/usr --datadir=$target --plugin-dir=/usr/lib64/mysql/plugin --user=root --log-error=$target/backup_manager_mysqld.err $limit_str --pid-file=$target/mysql.pid --socket=/tmp/backup_manager.sock --port=65432 2>> $target/backup_manager_mysqld.err &
 			instance=$!
 			echo "(pid $instance)"
