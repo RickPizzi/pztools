@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.40"
+BM_VERSION="4.5.41"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -979,7 +979,7 @@ parse_config()
         grep -q "^webhook_script" $CONFIGFILE && webhook_script=$(grep "^webhook_script" $CONFIGFILE | cut -d"=" -f2)
 
 	case "$1" in
-		'logs'|'validate-pit'|'inventory'|'inv'|'list'|'purge'|'print-latest'|'replication-info'|'version'|'print-latest-id'|'backup-type')
+		'restore'|'build-slave'|'logs'|'inventory'|'inv'|'list'|'purge'|'print-latest'|'replication-info'|'version'|'print-latest-id'|'backup-type'|'validate-pit'|'setup-replication')
 			;;
 		*)
 			if [ "$host" = "" -o "$user" = "" ]
@@ -2491,6 +2491,16 @@ DOC_EOF
 	exit 0
 }
 
+check_server_path()
+{
+	while true
+	do
+		[ -f $server_path ] && return
+		echo -n "NOTICE: server path '$server_path' does not exists. Please enter its path on this system: "
+		read server_path
+	done
+}
+
 mariadb_instance()
 {
 	case "$1" in
@@ -2498,6 +2508,7 @@ mariadb_instance()
 			echo -n "starting MariaDB auxiliary instance on $target... "
 			echo "server_id=987654321" >> $target/backup-my.cnf
 			echo "lower_case_table_names=$case_insens" >> $target/backup-my.cnf
+			check_server_path
 			$server_path --defaults-file=$target/backup-my.cnf  --innodb_file_per_table  --skip-grant-tables --basedir=/usr --datadir=$target --plugin-dir=/usr/lib64/mysql/plugin --user=root --log-error=$target/backup_manager_mysqld.err $limit_str --pid-file=$target/mysql.pid --socket=/tmp/backup_manager.sock --port=65432 2>> $target/backup_manager_mysqld.err &
 			instance=$!
 			echo "(pid $instance)"
