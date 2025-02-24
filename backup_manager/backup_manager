@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.41"
+BM_VERSION="4.5.42"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -125,7 +125,6 @@ safe_defaults()
 	master_slave=0
 	skip_notification=0
 	custom_config=0
-	binlog_flush_pct=10
 	server_path="/usr/sbin/mysqld"
 }
 
@@ -974,7 +973,6 @@ parse_config()
 	grep -q "^backup_timeout" $CONFIGFILE && timeout=$(grep "^backup_timeout" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^kill_query_time" $CONFIGFILE && kill_query_time=$(grep "^kill_query_time" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^open_files_limit" $CONFIGFILE && ulimit=$(grep "^open_files_limit" $CONFIGFILE | cut -d"=" -f2)
-        grep -q "^binlog_flush_pct" $CONFIGFILE && binlog_flush_pct=$(grep "^binlog_flush_pct" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^server_path" $CONFIGFILE && server_path=$(grep "^server_path" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^webhook_script" $CONFIGFILE && webhook_script=$(grep "^webhook_script" $CONFIGFILE | cut -d"=" -f2)
 
@@ -1079,13 +1077,6 @@ mysql_variable()
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
 	echo "select @@$1" | mysql -ANr -u $user $sock_str $pass_str
-}
-
-flush_binlogs()
-{
-	[ "$password" != "" ] && pass_str="-p$password"
-	[ "$socket" != "" ] && sock_str="-S$socket"
-	echo "flush binary logs" | mysql -ANr -u $user $sock_str $pass_str
 }
 
 prepare_target()
@@ -1227,8 +1218,6 @@ perform_binlogs_backup()
 	else
 		binlog_base=$(mysql_variable log_bin_basename)
 		[ "$binlog_base" = "" ] && clean_exit 0 # server is down
-		binlog_max=$(mysql_variable max_binlog_size)
-		binlog_thr=$((binlog_max*binlog_flush_pct/100)) 
 		find_binlogs_backup_sp $ref_id
 		build_binlog_list
 		echo "Backing up binary log files" 
@@ -2571,12 +2560,6 @@ build_binlog_list()
 		binlog_list="$binlog_list ${binlog##*/}"
 	done
 	binlog_list=$(echo $binlog_list | sed -e "s/${binlog##*/}//")
-	if [ $# -eq 0 -a $binlog_thr -ge 8192 -a $(stat -c "%s" $(dirname $binlog_base)/${binlog##*/}) -ge $binlog_thr ]
-	then
-		flush_binlogs 2
-		build_binlog_list
-		return
-	fi
 	if [ "${binlog_list## }" = "" ]
 	then
 		echo "No binary logs needing backup."

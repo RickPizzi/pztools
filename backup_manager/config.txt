@@ -1,0 +1,151 @@
+########################################################################
+#
+#	MariaDB Backup Manager configuration file
+#
+########################################################################
+#
+# SERVER TO BACK UP
+# MariaDB host, user and password for server to back up
+#
+backup_host=localhost
+backup_port=3306
+backup_user=root
+backup_password=root
+backup_socket=/var/lib/mysql/mysql.sock
+#
+#
+########################################################################
+#
+# TARGET DIRECTORY
+# where to store backups
+#
+target_directory=/mnt/backup
+#
+# date_format:
+# format of date for target directory folder creation
+#
+#date_format=%Y-%m-%d
+#
+#
+# minimum free space on target directory required to run a full backup
+#
+free_space_percentage=20
+#
+#
+########################################################################
+#
+# COMPRESSION AND ENCRYPTION
+#
+# compression options -
+# if commented out, no compression will take place
+#
+compressor=pigz -p 2
+uncompressor=pigz -p 2 -dc
+#
+# encryption options -
+# script will generate a cryptkey and export it in the environment
+# with name "enc_key", this can be used by several different encryption
+# utilities, eg. openssl. The cryptkey is then saved in the database.
+# if commented out, no encryption will take place
+#
+#encryptor=openssl enc -aes-256-cbc -pass env:enc_key
+#unencryptor=openssl enc -d -aes-256-cbc -pass env:enc_key
+#
+########################################################################
+#
+# PURGE OPTIONS
+# purge_days: how many days to keep full backups (for purge)
+#
+# smart purge will keep daily full backups for last 7 days, weekly backups 
+#             for last month and monthly backups up to the value of smart_purge_months;
+#             weekly and monthly backups are those taken on sunday
+#
+purge_days=15
+#
+#
+#smart_purge=1
+#smart_purge_months=3
+#
+# whether to purge broken backups immediately - not recommended
+#
+#purge_incomplete_backups=1
+#
+########################################################################
+#
+# EMAIL NOTIFICATIONS
+# will send an email in case of backup failure, requires mailx
+# and proper setup of the server's mail subsystem
+#
+# if commented out, no notification happens. if you want failure notifications,
+# please set failure_notify. If you also want success notifications (for 
+# full backups - sends also a pretty inventory in the email body) then set 
+# success_notify as well (can be a different email address)
+#
+#failure_notify=root@localhost
+#
+#success_notify=root@localhost
+#
+# name of customer, to properly tag email subjects in notifications
+#
+notify_label=Rick's lab
+#
+#
+########################################################################
+#
+# CALLING OUT URLs
+# you can define one "before backup" URL and one "after backup" URL
+#
+#callout_url_before=https://www.mariadb.com/before
+#callout_url_after=https://www.mariadb.com/after
+#
+########################################################################
+#
+# MISC OPTIONS
+#
+# parallelism:
+# for mariabackup and xtrabackup,  how many tablespaces to stream at a time
+# for mydumper, how many tables to dump at a time
+#
+#parallelism=4
+#
+#
+# save master position when using mysqldump - will cause slave to be stopped
+# for entire backup duration... 
+#
+#master_position=1
+#
+# include galera info in backup taken with xtrabackup or mariabackup
+# Warning: do not enable if galera not running, as the backup will fail
+#
+#galera_info=1
+#
+# restore directory to use as target for automatic restore tests
+# (backup_manager restore test command) - if not specified will 
+# try and use backup folder (target_directory)
+# Note: the space is released at the end of the test.
+#
+#restore_test_directory=/mnt/restore
+#
+#
+# time out backup after a preset amount of time, can be used when the backup
+# tool in use likes to freeze from time to time. unit is minutes and 
+# default is no timeout
+#
+#backup_timeout=360
+#
+#
+# kill long running queries taking longer than X seconds after locking all 
+# tables at end of backup - works for {maria,xtra}backup and mydumper
+# backup user needs the PROCESS and SUPER privileges for this to work
+#
+#kill_query_time=300
+#
+# increase max number of open files
+# (this value is set at OS level and passed to mariabackup and mariadbd)
+#
+#open_files_limit=100000
+#
+# path to MariaDB server executable
+# (used during point-in-time restore)
+#
+#server_path=/usr/sbin/mysqld
