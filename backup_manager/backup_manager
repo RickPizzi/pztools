@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.42"
+BM_VERSION="4.5.43"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -977,7 +977,7 @@ parse_config()
         grep -q "^webhook_script" $CONFIGFILE && webhook_script=$(grep "^webhook_script" $CONFIGFILE | cut -d"=" -f2)
 
 	case "$1" in
-		'restore'|'build-slave'|'logs'|'inventory'|'inv'|'list'|'purge'|'print-latest'|'replication-info'|'version'|'print-latest-id'|'backup-type'|'validate-pit'|'setup-replication')
+		'restore'|'build-slave'|'logs'|'inventory'|'inv'|'list'|'purge'|'print-latest'|'replication-info'|'version'|'print-latest-id'|'backup-type'|'validate-pit'|'setup-replication'|'')
 			;;
 		*)
 			if [ "$host" = "" -o "$user" = "" ]
@@ -1924,13 +1924,6 @@ do_restore_test()
 		return
 	fi
 	[ "$restore_test_dir" != "" ] && disk_space_avail_k=$(df -k $restore_test_dir |  tail -1 | tr -s " " "\t" | cut -f 4)
-	if [ $disk_space_avail_k -le $(du -ks $(mysql_variable datadir) | cut -f 1) ]
-	then
-		msg="not enough free disk space to perform a restore test. Exiting."
-		echo "ERROR: $msg"
-		[ ! -t 1 -a "$failure_notify" != "" ] && echo $msg | send_mail "$customer: restore test FAILED" $failure_notify
-		return
-	fi
 	echo "Performing a test restore of backup $tb and related incrementals"
 	restore_test=1
 	[ "$restore_test_dir" != "" ] && do_restore $tb $restore_test_dir/RESTORE-TEST || do_restore $tb $target/RESTORE-TEST
