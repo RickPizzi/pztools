@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.43"
+BM_VERSION="4.5.44"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1923,13 +1923,13 @@ do_restore_test()
 		[ ! -t 1 -a "$failure_notify" != "" ] && echo $msg | send_mail "$customer: restore test FAILED" $failure_notify
 		return
 	fi
-	[ "$restore_test_dir" != "" ] && disk_space_avail_k=$(df -k $restore_test_dir |  tail -1 | tr -s " " "\t" | cut -f 4)
 	echo "Performing a test restore of backup $tb and related incrementals"
 	restore_test=1
 	[ "$restore_test_dir" != "" ] && do_restore $tb $restore_test_dir/RESTORE-TEST || do_restore $tb $target/RESTORE-TEST
 	mv $logfile /tmp/
 	echo "Removing restore test directory $target. Details of this test execution can be found in /tmp/restore.log."
 	rm -rf $target
+	exit $status
 }
 
 build_slave()
