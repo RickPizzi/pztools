@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.44"
+BM_VERSION="4.5.45"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -278,6 +278,7 @@ check_free_space()
 		msg="Filesystem for backup target directory is full. Exiting."
 		echo $msg
 		[ "$failure_notify" != "" ] && echo $msg | send_mail "$customer: backup FAILED" $failure_notify
+		status=1; fire_webhook
 		exit 1
 	fi
 	if [ $level -eq 0 -a $disk_space_p_avail -lt $min_disk_pfree ]
@@ -286,6 +287,7 @@ check_free_space()
 		msg="Filesystem has $disk_space_p_avail% ($disk_space_avail) free, but $min_disk_pfree% is required. Exiting."
 		echo $msg
 		[ "$failure_notify" != "" ] && echo $msg | send_mail "$customer: backup FAILED" $failure_notify
+		status=1; fire_webhook
 		exit 1
 	fi
 }
@@ -1165,8 +1167,14 @@ update_backup_status()
 		0) save_datadir_size;;
 		2) [ "$dumplist" = "ALL" ] && save_datadir_size;;
 	esac
+	fire_webhook
+}
+
+fire_webhook()
+{
+	[ "$webhook_script" = "" ] && return
 	[ "$customer" != "" ] && export BACKUP_LABEL="$customer"
-	[ "$webhook_script" != "" ] && eval $webhook_script $tool $level $status
+	eval $webhook_script $tool $level $status
 }
 
 perform_backup()
