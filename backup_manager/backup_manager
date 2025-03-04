@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.45"
+BM_VERSION="4.5.46"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2421,6 +2421,7 @@ check_slave_status()
 		echo $msg
 		[ "$tool" = "binlogs" ] && exit 1
 		[ "$failure_notify" != "" ] && echo $msg | send_mail "$customer: backup FAILED" $failure_notify
+		status=1; fire_webhook
 		exit 1
 	fi
 }
