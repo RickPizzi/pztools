@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.46"
+BM_VERSION="4.5.47"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1167,7 +1167,6 @@ update_backup_status()
 		0) save_datadir_size;;
 		2) [ "$dumplist" = "ALL" ] && save_datadir_size;;
 	esac
-	fire_webhook
 }
 
 fire_webhook()
@@ -1244,6 +1243,7 @@ perform_binlogs_backup()
 		fi
 	fi
 	update_backup_status
+	fire_webhook
 }
 
 save_binlog_info()
@@ -1739,6 +1739,7 @@ perform_zsnapshot_backup()
 	fi
 	echo
 	update_backup_status
+	fire_webhook
 }
 
 perform_maria_backup()
@@ -1772,6 +1773,7 @@ perform_maria_backup()
 	esac
 	get_lsn
 	update_backup_status
+	fire_webhook
 }
 
 open_files_limit()
@@ -1815,6 +1817,7 @@ perform_mariaunpacked_backup()
         [ $status -ne 0 ] && return
         tail -1 $logfile | fgrep -q "completed OK"
         status=$?
+	fire_webhook
         [ $status -ne 0 ] && return
         get_lsn
         update_backup_status export
@@ -1851,6 +1854,7 @@ perform_xtra_backup()
 	esac
 	get_lsn
 	update_backup_status
+	fire_webhook
 }
 
 perform_mydumper_backup()
@@ -1879,6 +1883,7 @@ perform_mydumper_backup()
 			;;
 	esac
 	update_backup_status
+	fire_webhook
 }
 
 perform_mysqldump_backup()
@@ -1898,6 +1903,7 @@ perform_mysqldump_backup()
 	$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host -P $port $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 	run_with_timeout
 	update_backup_status
+	fire_webhook
 }
 
 perform_mydumper_restore()
