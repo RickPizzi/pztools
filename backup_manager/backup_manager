@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.47"
+BM_VERSION="4.5.48"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2532,12 +2532,6 @@ dim_prepare_memory()
         prepare_memory=$((avail/4))
 }
 
-browse_inventory()
-{
-	echo "This functionality is not available in this version of backup manager."
-	exit 1
-}
-
 run_purge_backups()
 {
 	purge_backups $*
@@ -2625,9 +2619,9 @@ fi
 [ "$1" = "help" ] && self_doc
 parse_config $*
 setup_db
-disk_space
 case "$1" in
 	'backup') 	
+		disk_space
 		do_backup $2 $3 $4 $5
 		exit $status
 		;;
@@ -2635,10 +2629,8 @@ case "$1" in
 		do_restore $2 "$3" "$4" "$5"
 		;;
 	'inventory'|'inv'|'list') 
+		disk_space
 		inventory $2 $3 $4
-		;;
-	'browse') 	
-		browse_inventory $2 $3 $4
 		;;
 	'purge') 
 		run_purge_backups $2
