@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.48"
+BM_VERSION="4.5.49"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1765,7 +1765,7 @@ perform_maria_backup()
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
 		1)
-			cp $target/checkpoints/mariabackup/xtrabackup_checkpoints /tmp
+			cp $target/checkpoints/mariabackup/xtrabackup_checkpoints /tmp 2>/dev/null
 			mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
@@ -1846,7 +1846,7 @@ perform_xtra_backup()
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/xtrabackup 2>/dev/null
 			;;
 		1)
-			cp $target/checkpoints/xtrabackup/xtrabackup_checkpoints /tmp
+			cp $target/checkpoints/xtrabackup/xtrabackup_checkpoints /tmp 2>/dev/null
 			xtrabackup --backup $galera_str $kill_str --incremental-basedir=$target/checkpoints/xtrabackup --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/xtrabackup 2>/dev/null
@@ -2434,7 +2434,7 @@ check_slave_status()
 
 get_lsn()
 {
-	lsn=$(fgrep last_lsn $target/checkpoints/$tool/xtrabackup_checkpoints | tr -d " " | cut -d"=" -f 2)
+	lsn=$(fgrep last_lsn $target/checkpoints/$tool/xtrabackup_checkpoints 2>/dev/null | tr -d " " | cut -d"=" -f 2)
 }
 
 build_config()
