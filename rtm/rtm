@@ -1,24 +1,24 @@
 #!/bin/bash
 #
-#	RTM - Realtime Transactions Monitor
-#	(c) 2023,2024 Rick Pizzi, pizzi@leopardus.com
+#	RTM - Realtime Transactions Monitor for MariaDB
+#	(c) 2023,2024,2025  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.4.3
+VERSION=1.5.1
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
 
-pretty_locks()
+prettify()
 {
         if [ $1 -lt 1000000 ]
         then
-                p_locks=$1
+                pretty=$1
                 return
         fi
         mi=$(($1/1000000))
         r=$(($1-mi*1000000))
         d=$((r/10000))
-	p_locks="$mi.${d}M"
+	pretty="$mi.${d}M"
 }
 
 pretty_time()
@@ -31,8 +31,6 @@ pretty_time()
 
 init_terminal()
 {
-	term_width=$(tput cols)
-	term_height=$(tput lines)
 	term_bold=$(tput bold)
 	term_rev=$(tput rev)
 	term_reset=$(tput sgr0)
@@ -40,7 +38,7 @@ init_terminal()
 
 check_terminal_width()
 {
-	[ $term_width -lt $PROCLIST_MIN_TERM_SIZE ] && return 1 || return 0
+	[ $COLUMNS -lt $PROCLIST_MIN_TERM_SIZE ] && return 1 || return 0
 }
 
 pak()
@@ -67,7 +65,7 @@ help_menu()
 	p=6
 	for entry in "${scr_menu_opt[@]}"
 	do
-		if [ $((p+${#entry})) -gt $term_width ]
+		if [ $((p+${#entry})) -gt $COLUMNS ]
 		then
 			echo
 			tl=$((tl+1))
@@ -92,25 +90,34 @@ header()
 			printf "$term_rev%-30s$term_reset " "snapshot $snapt"
                         ;;
 		*)
-			printf "%-30s " $hostname 
+			printf "%-30s " $hostname
 			;;
 	esac
-	printf "%$((term_width-125))s %s\n" " " "$(date)"
-	[ $arg_debug -eq 1 ] && echo "DEBUG: w=$term_width h=$term_height min=$PROCLIST_MIN_TERM_SIZE"
+	printf "%20s" " "
+	prettify $(cat $snapfile | grep ^History | sed -re "s/History list length ([0-9]*)/\1/")
+	if [ $COLUMNS -gt 170 ]
+	then
+	     	printf "%26s" "History list length $pretty"
+		printf "%$((COLUMNS-169))s" " "
+	else
+		printf "%$((COLUMNS-143))s" " "
+	fi
+	printf "%s\n" "$(date)"
+	[ $arg_debug -eq 1 ] && echo "DEBUG: w=$COLUMNS h=$LINES min=$PROCLIST_MIN_TERM_SIZE"
 	hdrmsg=0
 	tl=$HEADER_LINES
 	help_menu
-	printf "%-8s %-17s %-8s %-6s %-10s %-16s %-16s %-20s" " state" "   transaction ID" "  time" "locks" "thread ID" "IP address" "user" "InnoDB state" 
+	printf "%-8s %-17s %-8s %-6s %-6s %-10s %-16s %-16s %-20s" " state" "   transaction ID" "  time" "locks" "undos" "thread ID" "IP address" "user" "InnoDB state" 
 	if [ "$processlist" = "yes" ]
 	then
 		printf " query\n" 
 	else
 		printf "\n"
 	fi
-	printf "%8s %-17s %-8s %-6s %-10s %-16s %-16s %-20s" "--------" "-----------------" "--------" "------" "----------" "----------------" "----------------" "--------------------"
+	printf "%8s %-17s %-8s %-6s %-6s %-10s %-16s %-16s %-20s" "--------" "-----------------" "--------" "------" "------" "----------" "----------------" "----------------" "--------------------"
 	if [ "$processlist" = "yes" ]
 	then
-		printf " %s\n" "-----------------------------------------------------------------------------"
+		printf " %s\n" "----------------------------------------------------------------------"
 	else
 		printf "\n"
 	fi
@@ -499,7 +506,7 @@ do
 	if [ -s $tmpf ]
 	then 
 		[ "$olderfirst" = "yes" ] && sortorder="-r" || sortorder=""
-		sed -re "s/^---(.*)\s(.*), (ACTIVE|ACTIVE \(PREPARED\)) ([0-9]*) sec(.*)/\2 \4 /g" -e "s/^([RL0-9])(.*) lock (.*), (.*), ([0-9]*) row lock(.*)/\1 \5 /g" -e "$localhost_edit" -e "$parser" < $tmpf | tr -d "\n" | tr "@" "\n" | sort -nk2 $sortorder | while read  t_id t_runtime t_ts t_locks t_thread_id t_ipaddr t_user t_extra t_extra2
+		sed -re "s/^---(.*)\s(.*), (ACTIVE|ACTIVE \(PREPARED\)) ([0-9]*) sec(.*)/\2 \4 /g" -e "s/^([RL0-9])(.*) lock (.*), (.*), ([0-9]*) row lock\(s\), undo log entries ([0-9]*)/\1 \5 \6 /g" -e "$localhost_edit" -e "$parser" < $tmpf | tr -d "\n" | tr "@" "\n" | sort -nk2 $sortorder | while read  t_id t_runtime t_ts t_locks t_undos t_thread_id t_ipaddr t_user t_extra t_extra2
 		do
 			#[[ $t_runtime != ?(-)+([0-9]) ]] && cp $tmpf /tmp/rtm.debug
 			ext_d=0
@@ -529,7 +536,7 @@ do
 				t_extra="$t_ipaddr"
 				t_ipaddr=""
 			fi
-			if [ $tl -eq $term_height -a "$arg_use_file" = "" ]
+			if [ $tl -eq $LINES -a "$arg_use_file" = "" ]
 			then
 				echo -n "$term_rev some transactions suppressed due to screen size $term_reset "
 				break
@@ -560,17 +567,20 @@ do
 				fi
 			fi
 			pretty_time $t_runtime
-			pretty_locks $t_locks
+			prettify $t_locks
+			p_locks=$pretty
+			prettify $t_undos
+			p_undos=$pretty
 			[ "$t_extra" = "" ] && t_extra=" "
 			if [ $arg_quiet -eq 0 ]
 			then
 				if [ "$processlist" = "yes" ]
 				then
-					read p_info <<<$(echo "select replace(replace(left(info, 74 + $((term_width-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', '') from information_schema.processlist where id = $t_thread_id" | mysql -ANr $connstr)
+					read p_info <<<$(echo "select replace(replace(left(info, 74 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', '') from information_schema.processlist where id = $t_thread_id" | mysql -ANr $connstr)
 					p_info=$(echo "$p_info" | tr "\t" " " | tr "\n" " " | tr -s " ")
-					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %10d %-16s %-16.16s %-20.20s %s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_info"
+					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s %s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $p_undos $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_info"
 				else
-					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
+					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $p_undos $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
 				fi
 				tl=$((tl+1))
 			fi
