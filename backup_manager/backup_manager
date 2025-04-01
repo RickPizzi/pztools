@@ -1098,6 +1098,7 @@ prepare_target()
 				;;
 		'smartdump')
 				fn="smartdump_$(date +%H:%M)"
+				tt=$target/$(date +$dt_format)/$tool
 				;;
 		'mariaunpacked')
 				fn=""
