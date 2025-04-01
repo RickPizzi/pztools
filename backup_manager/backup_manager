@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.6.1"
+BM_VERSION="4.6.2"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1900,6 +1900,14 @@ perform_mydumper_backup()
 	fire_webhook
 }
 
+set_read_only()
+{
+	[ "$password" != "" ] && pass_str="-p$password"
+	[ "$socket" != "" ] && sock_str="-S$socket"
+	[ "$port" != "" ] && port_str="-P$port"
+	echo "set global read_only=$1" | mysql -A -u $user $sock_str $pass_str $port_str"
+}
+
 perform_smartdump_backup()
 {
 	smartdump=$(which smartdump 2>/dev/null)
@@ -1910,12 +1918,16 @@ perform_smartdump_backup()
 	else
 		echo "Performing backup using $tool."
 	fi
+	ro=$(mysql_variable read_only)
+	[ "$ro" = "1" ] && set_read_only 0
 	[ "$password" != "" ] && pass_str="--password $password"
 	[ "$socket" != "" ] && sock_str="--socket $socket"
 	[ "$port" != "" ] && port_str="--port $port"
 	nproc=$(cat /proc/cpuinfo | fgrep -c processor)
 	$smartdump  --dump --lock-timeout=30 --threads $((nproc/2)) --host $host --user $user $pass_str $sock_str $port_str | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 	run_with_timeout
+	status=${PIPESTATUS[0]} 
+	[ "$ro" = "1" ] && set_read_only 1
 	update_backup_status
 	fire_webhook
 }
