@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.6.4"
+BM_VERSION="4.6.5"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1095,6 +1095,9 @@ prepare_target()
 		'mydumper')
 				fn=""
 				tt=$target/$(date +$dt_format)/${tool}_$(date +%H:%M)
+				;;
+		'smartdump')
+				fn="smartdump_$(date +%H:%M)"
 				;;
 		'mariaunpacked')
 				fn=""
