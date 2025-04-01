@@ -1905,7 +1905,7 @@ set_read_only()
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
 	[ "$port" != "" ] && port_str="-P$port"
-	echo "set global read_only=$1" | mysql -A -u $user $sock_str $pass_str $port_str"
+	echo "set global read_only=$1" | mysql -A -u $user $sock_str $pass_str $port_str
 }
 
 perform_smartdump_backup()
