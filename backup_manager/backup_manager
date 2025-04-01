@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.6.2"
+BM_VERSION="4.6.3"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1306,7 +1306,6 @@ check_status()
 			echo "update backup_history set status = $status where uuid = '$backup_id';" | dbquery $DB
 			;;
 		'smartdump')
-			[ -s $logfile ] && status=1
 			echo "update backup_history set status = $status where uuid = '$backup_id';" | dbquery $DB
 			;;
 		*)	echo "update backup_history set status = $status where uuid = '$backup_id';" | dbquery $DB
@@ -1924,8 +1923,7 @@ perform_smartdump_backup()
 	[ "$socket" != "" ] && sock_str="--socket $socket"
 	[ "$port" != "" ] && port_str="--port $port"
 	nproc=$(cat /proc/cpuinfo | fgrep -c processor)
-	$smartdump  --dump --lock-timeout=30 --threads $((nproc/2)) --host $host --user $user $pass_str $sock_str $port_str | $compressor | $encryptor 2>/dev/null > $tt/$fn &
-	run_with_timeout
+	$smartdump  --dump --lock-timeout=30 --threads $((nproc/2)) --host $host --user $user $pass_str $sock_str $port_str | $compressor | $encryptor 2>/dev/null > $tt/$fn
 	status=${PIPESTATUS[0]} 
 	[ "$ro" = "1" ] && set_read_only 1
 	update_backup_status
