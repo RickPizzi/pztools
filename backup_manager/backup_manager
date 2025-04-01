@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.5.50"
+BM_VERSION="4.5.51"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1900,8 +1900,9 @@ perform_mysqldump_backup()
 	[ "$dumplist" = "ALL" ] && dbstr="--all-databases --master-data=2" || dbstr="--databases ${dumplist//,/ }"
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
+	[ "$port" != "" ] && port_str="-P$port"
 	[ $master_position -eq 1 ] && mp_str="--dump-slave=2"
-	$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host -P $port $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+	$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host $port_str $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 	run_with_timeout
 	update_backup_status
 	fire_webhook
