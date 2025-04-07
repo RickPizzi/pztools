@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.5.1
+VERSION=1.5.2
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -193,10 +193,10 @@ get_nr()
 	[ "$arg_use_file" = "" ] && arg_nr=$(echo "select 1 - @@skip_name_resolve" | mysql -ANr $connstr 2>/dev/null)
 	if [ $arg_nr -eq 0 ]
 	then
-		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._]*)(\s*)([A-Za-z0-9_\-]*)\s?(.*)$/\2 \5 \7 \8@/g"
+		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._]*)(\s*)([A-Za-z0-9_\-]*)\s?(.*)$/\2+\5+\7+\8@/g"
 		localhost_edit="s/no_match__g//"
 	else
-		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._-]*) ([A-Za-z0-9\._]*) ([A-Za-z0-9_\-]*)\s?(.*)$/\2 \6 \7 \8@/g"
+		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._-]*) ([A-Za-z0-9\._]*) ([A-Za-z0-9_\-]*)\s?(.*)$/\2+\6+\7+\8@/g"
 		localhost_edit="s/localhost\s/localhost localhost /"
 	fi
 }
@@ -506,7 +506,7 @@ do
 	if [ -s $tmpf ]
 	then 
 		[ "$olderfirst" = "yes" ] && sortorder="-r" || sortorder=""
-		sed -re "s/^---(.*)\s(.*), (ACTIVE|ACTIVE \(PREPARED\)) ([0-9]*) sec(.*)/\2 \4 /g" -e "s/^([RL0-9])(.*) lock (.*), (.*), ([0-9]*) row lock\(s\), undo log entries ([0-9]*)/\1 \5 \6 /g" -e "$localhost_edit" -e "$parser" < $tmpf | tr -d "\n" | tr "@" "\n" | sort -nk2 $sortorder | while read  t_id t_runtime t_ts t_locks t_undos t_thread_id t_ipaddr t_user t_extra t_extra2
+		sed -re "s/^---(.*)\s(.*), (ACTIVE|ACTIVE \(PREPARED\)) ([0-9]*) sec(.*)/\2+\4+/g" -e 's/^([RL0-9])(.*) lock (.*), (.*), ([0-9]*) row lock(.*)$/\1+\5+\6+/g' -e "$localhost_edit" -e "$parser" < $tmpf | tr -d "\n" | tr "@" "\n" | sort -nk2 $sortorder | while IFS="+" read t_id t_runtime t_ts t_locks t_undostr t_thread_id t_ipaddr t_user t_extra t_extra2
 		do
 			#[[ $t_runtime != ?(-)+([0-9]) ]] && cp $tmpf /tmp/rtm.debug
 			ext_d=0
@@ -517,7 +517,7 @@ do
 					t_ipaddr=""
 					t_extra=$(echo "$t_extra" | sed -re "s/^(.*), query id (.*) (.*)$/\3/")
 					;;
-				'Waiting'|'closing'|'Delete_rows_log_event'|'Update_rows_log_event'|'Write_rows_log_event')
+				'Waiting'|'closing'|'After_log_apply_event'|'Delete_rows_log_event'|'Update_rows_log_event'|'Write_rows_log_event')
 					t_extra="$t_ipaddr $t_user $t_extra $t_extra2"
 					t_user="SQL_thread"
 					t_ipaddr=""
@@ -569,18 +569,23 @@ do
 			pretty_time $t_runtime
 			prettify $t_locks
 			p_locks=$pretty
-			prettify $t_undos
-			p_undos=$pretty
+			t_undos=$(echo "$t_undostr" | sed -nre "s/^(.*)entries ([0-9]*)$/\2/p")
+			p_undos=""
+			if [ "$t_undos" != "" ]
+			then
+				prettify $t_undos 
+				p_undos=$pretty
+			fi
 			[ "$t_extra" = "" ] && t_extra=" "
 			if [ $arg_quiet -eq 0 ]
 			then
 				if [ "$processlist" = "yes" ]
 				then
-					read p_info <<<$(echo "select replace(replace(left(info, 74 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', '') from information_schema.processlist where id = $t_thread_id" | mysql -ANr $connstr)
+					read p_info <<<$(echo "select replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', '') from information_schema.processlist where id = $t_thread_id" | mysql -ANr $connstr)
 					p_info=$(echo "$p_info" | tr "\t" " " | tr "\n" " " | tr -s " ")
-					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s %s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $p_undos $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_info"
+					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s %s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_info"
 				else
-					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks $p_undos $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
+					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
 				fi
 				tl=$((tl+1))
 			fi
