@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.6.5"
+BM_VERSION="4.6.6"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1927,7 +1927,7 @@ perform_smartdump_backup()
 	[ "$socket" != "" ] && sock_str="--socket $socket"
 	[ "$port" != "" ] && port_str="--port $port"
 	nproc=$(cat /proc/cpuinfo | fgrep -c processor)
-	$smartdump  --dump --lock-timeout=30 --threads $((nproc/2)) --host $host --user $user $pass_str $sock_str $port_str 2>$logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn
+	$smartdump  --dump --lock-timeout=30 --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str 2>$logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn
 	status=${PIPESTATUS[0]} 
 	[ "$ro" = "1" ] && set_read_only 1
 	update_backup_status
@@ -1971,7 +1971,7 @@ perform_smartdump_restore()
 	[ "$socket" != "" ] && sock_str="--socket $socket"
 	[ "$port" != "" ] && port_str="--port $port"
 	nproc=$(cat /proc/cpuinfo | fgrep -c processor)
-	cat $path | $unencryptor 2>/dev/null | $uncompressor | smartdump --stream --threads $((nproc/2)) --host $host --user $user $pass_str $sock_str $port_str
+	cat $path | $unencryptor 2>/dev/null | $uncompressor | smartdump --stream --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str
 	status=$?
 }
 
