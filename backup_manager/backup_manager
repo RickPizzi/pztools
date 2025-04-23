@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.6.7"
+BM_VERSION="4.6.6"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1310,10 +1310,7 @@ check_status()
 			echo "update backup_history set status = $status where uuid = '$backup_id';" | dbquery $DB
 			;;
 		'smartdump')
-			binlog_file=$(grep "^binlog_file" /tmp/smartdump_repl_info 2>/dev/null | cut -f 2)
-			binlog_pos=$(grep "^binlog_pos" /tmp/smartdump_repl_info 2>/dev/null | cut -f 2)
-			gtid_binlog_pos=$(grep "^gtid" /tmp/smartdump_repl_info 2>/dev/null | cut -f 2)
-			echo "update backup_history set status = $status, binlog_file = '$binlog_file', binlog_position = '$binlog_pos', gtid_binlog_pos='$gtid_binlog_pos' where uuid = '$backup_id';" | dbquery $DB
+			echo "update backup_history set status = $status where uuid = '$backup_id';" | dbquery $DB
 			;;
 		*)	echo "update backup_history set status = $status where uuid = '$backup_id';" | dbquery $DB
 			;;
@@ -1929,6 +1926,7 @@ perform_smartdump_backup()
 	[ "$password" != "" ] && pass_str="--password $password"
 	[ "$socket" != "" ] && sock_str="--socket $socket"
 	[ "$port" != "" ] && port_str="--port $port"
+	nproc=$(cat /proc/cpuinfo | fgrep -c processor)
 	$smartdump  --dump --lock-timeout=30 --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str 2>$logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn
 	status=${PIPESTATUS[0]} 
 	[ "$ro" = "1" ] && set_read_only 1
@@ -1972,6 +1970,7 @@ perform_smartdump_restore()
 	[ "$password" != "" ] && pass_str="--password $password"
 	[ "$socket" != "" ] && sock_str="--socket $socket"
 	[ "$port" != "" ] && port_str="--port $port"
+	nproc=$(cat /proc/cpuinfo | fgrep -c processor)
 	cat $path | $unencryptor 2>/dev/null | $uncompressor | smartdump --stream --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str
 	status=$?
 }
