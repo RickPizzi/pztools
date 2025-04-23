@@ -1310,7 +1310,7 @@ check_status()
 			echo "update backup_history set status = $status where uuid = '$backup_id';" | dbquery $DB
 			;;
 		'smartdump')
-			ri=$(cat /tmp/smartdump_master_pos 2>/dev/null | sed -re "s/^(.*):(.*)\s(.*)$/, binlog_file = '\1', binlog_pos = \2, gtid_binlog_pos = '\3'/")
+			ri=$(cat /tmp/smartdump_master_pos 2>/dev/null | sed -re "s/^(.*):(.*)\s(.*)$/, binlog_file = '\1', binlog_position = \2, gtid_binlog_pos = '\3'/")
 			echo "update backup_history set status = $status $ri where uuid = '$backup_id';" | dbquery $DB
 			;;
 		*)	echo "update backup_history set status = $status where uuid = '$backup_id';" | dbquery $DB
