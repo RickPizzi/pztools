@@ -704,8 +704,7 @@ smart_purge()
 
 do_purge()
 {
-	st=$(echo "select start_time from backup_history where uuid = '$1';" | dbquery $DB)
-	echo "purging backup piece $1 ($st)"
+	echo "purging $1"
 	if [ $dry -eq 0 ]
 	then
 		if [ $cloud_storage -eq 0 ]
