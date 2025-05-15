@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.6.7"
+BM_VERSION="4.6.8"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -126,6 +126,7 @@ safe_defaults()
 	skip_notification=0
 	custom_config=0
 	server_path="/usr/sbin/mysqld"
+	cloud_storage=0
 }
 
 setup_db()
@@ -704,29 +705,31 @@ smart_purge()
 do_purge()
 {
 	st=$(echo "select start_time from backup_history where uuid = '$1';" | dbquery $DB)
-	echo "purging full backup $1 ($st) and related incrementals and binlog backups"
+	echo "purging backup piece $1 ($st)"
 	if [ $dry -eq 0 ]
 	then
-		path=$(echo "select bulocation from backup_history where uuid = '$1';" | dbquery $DB)
-		if [ -d $path ]
+		if [ $cloud_storage -eq 0 ]
 		then
-			rm -rf $path
-		else
-			remove_files $1
+			path=$(echo "select bulocation from backup_history where uuid = '$1';" | dbquery $DB)
+			if [ -d $path ]
+			then
+				rm -rf $path
+			else
+				remove_files $1
+			fi
+			for ref_id in $(echo "select uuid from backup_history where ref_full_backup = '$1';" | dbquery $DB)
+			do
+				remove_files $ref_id
+			done
+			rmdir --ignore-fail-on-non-empty $(dirname $path)
+			rmdir --ignore-fail-on-non-empty $(dirname $(dirname $path))
 		fi
-		for ref_id in $(echo "select uuid from backup_history where ref_full_backup = '$1';" | dbquery $DB)
-		do
-			remove_files $ref_id
-		done
-		rmdir --ignore-fail-on-non-empty $(dirname $path)
-		rmdir --ignore-fail-on-non-empty $(dirname $(dirname $path))
 		(echo "PRAGMA foreign_keys=ON;"; echo "delete from backup_history where uuid = '$1';") | dbquery $DB
 	fi
 }
 
 purge_backups()
 {
-
 	check_root purge
 	if [ $expire_days -eq 0 -a $smart_purge -eq 0 ]
 	then
@@ -977,6 +980,7 @@ parse_config()
 	grep -q "^open_files_limit" $CONFIGFILE && ulimit=$(grep "^open_files_limit" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^server_path" $CONFIGFILE && server_path=$(grep "^server_path" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^webhook_script" $CONFIGFILE && webhook_script=$(grep "^webhook_script" $CONFIGFILE | cut -d"=" -f2)
+        grep -q "^cloud_storage" $CONFIGFILE && cloud_storage=$(grep "^cloud_storage" $CONFIGFILE | cut -d"=" -f2)
 
 	case "$1" in
 		'restore'|'build-slave'|'logs'|'inventory'|'inv'|'list'|'purge'|'print-latest'|'replication-info'|'version'|'print-latest-id'|'backup-type'|'validate-pit'|'setup-replication'|'')
