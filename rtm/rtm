@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.5.3
+VERSION=1.5.4
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -94,11 +94,16 @@ header()
 			;;
 	esac
 	printf "%20s" " "
-	prettify $(cat $snapfile | grep ^History | sed -re "s/History list length ([0-9]*)/\1/")
-	if [ $COLUMNS -gt 170 ]
+	if [ "$arg_use_file" = "" ]
 	then
-	     	printf "%26s" "History list length $pretty"
-		printf "%$((COLUMNS-169))s" " "
+		prettify $(cat $snapfile | grep ^History | sed -re "s/History list length ([0-9]*)/\1/")
+		if [ $COLUMNS -gt 170 ]
+		then
+	     		printf "%26s" "History list length $pretty"
+			printf "%$((COLUMNS-169))s" " "
+		else
+			printf "%$((COLUMNS-143))s" " "
+		fi
 	else
 		printf "%$((COLUMNS-143))s" " "
 	fi
@@ -506,7 +511,7 @@ do
 	if [ -s $tmpf ]
 	then 
 		[ "$olderfirst" = "yes" ] && sortorder="-r" || sortorder=""
-		sed -re "s/^---(.*)\s(.*), (ACTIVE|ACTIVE \(PREPARED\)) ([0-9]*) sec(.*)/\2+\4+/g" -e 's/^([RL0-9])(.*) lock (.*), (.*), ([0-9]*) row lock(.*)$/\1+\5+\6+/g' -e "$localhost_edit" -e "$parser" < $tmpf | tr -d "\n" | tr "@" "\n" | sort -nk2 $sortorder | while IFS="+" read t_id t_runtime t_ts t_locks t_undostr t_thread_id t_ipaddr t_user t_extra t_extra2
+		sed -re "s/^---(.*)\s(.*), (ACTIVE|ACTIVE \(PREPARED\)) ([0-9]*) sec(.*)/\2+\4+/g" -e 's/^([RL0-9])(.*) lock (.*), (.*), ([0-9]*) row lock(.*)$/\1+\5+\6+/g' -e "$localhost_edit" -e "$parser" < $tmpf | tr -d "\n" | tr "@" "\n" | sort -nk2 -t'+' $sortorder | while IFS="+" read t_id t_runtime t_ts t_locks t_undostr t_thread_id t_ipaddr t_user t_extra t_extra2
 		do
 			#[[ $t_runtime != ?(-)+([0-9]) ]] && cp $tmpf /tmp/rtm.debug
 			ext_d=0
