@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.6.8"
+BM_VERSION="4.6.9"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -328,9 +328,10 @@ run_with_timeout()
 	done
 	if [ $countdown -eq 0 ]
 	then
-		kill -9 $pid
 		echo "ERROR: Backup timed out. Killing it."
+		pkill -9 -P $pid
 		echo "Backup killed due to timeout." >> $logfile
+		status=1
 	else
 		wait $pid
 		status=$?
