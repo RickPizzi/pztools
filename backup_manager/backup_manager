@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.6.9"
+BM_VERSION="4.7.1"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -119,7 +119,6 @@ safe_defaults()
 	perldoc=0
         [ "$(which perldoc 2>/dev/null)" != "" ] && perldoc=1
 	point_in_time=0
-	no_mysqlbinlog=0
 	set_maintenance=0
 	ignore_errors=0
 	master_slave=0
@@ -127,6 +126,7 @@ safe_defaults()
 	custom_config=0
 	server_path="/usr/sbin/mysqld"
 	cloud_storage=0
+	local_remote="eval"
 }
 
 setup_db()
@@ -343,7 +343,8 @@ scan_binlog_archive()
 	echo -n "scanning binlog archive.."
 	for bf in $(ls $bxfolder)
 	do
-	t=$(mysqlbinlog --no-defaults $bf | fgrep -m 1 "Start: binlog" | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)\s+([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/ 0\2/")
+	#t=$(mysqlbinlog --no-defaults $bf | fgrep -m 1 "Start: binlog" | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)\s+([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/ 0\2/")
+	t=$(cat $bf | $ssh $mysqlbinlog --no-defaults - | fgrep -m 1 "Start: binlog" | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)\s+([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/ 0\2/")
 		if [ "$(echo "select '$t' > '$requested_binlog_ts';" | dbquery $DB)" = "1" ]
 		then 
 			last_b=$prev_bf
@@ -446,7 +447,8 @@ validate_point_in_time()
 		echo "$requested_binlog_file" | grep -qE "^[-0-9a-z\.]+$"  || pit_input_error "$1"
 		echo "$requested_binlog_position" | grep -qE "^[0-9]+$" || pit_input_error "$1"
 	fi
-	if [ $no_mysqlbinlog -eq 1 ]
+	mysqlbinlog=$($ssh which mysqlbinlog 2>/dev/null)
+	if [ "$mysqlbinlog" = "" ]
 	then
 		echo "ERROR: mysqlbinlog program not installed, cannot restore to point-in-time. Exiting."
 		exit 1
@@ -780,107 +782,118 @@ check_home_config()
 self_doc()
 {
 	base64 -d << DOC_EOF | gzip -dc | sed -e "s/\$VERSION/v$BM_VERSION/" > /tmp/bmdoc.$$
-H4sIAAAAAAAAA8VbbXMbN5L+7PkVONfehkpRlGUnu3WOwjpaouWpUKKOpJz13l7pwBmQxGreMpiRRFd+
-/PULMIMhaSd2tupqX0yRmEaj0f300w3Mj0UeB8GPGyXjU3E9uhoHQXAlSy0v3og3MrqvC3ElM7lWpTgW
-Uizpq+Mqz5Njuc5yU+nIfin+LEplqrxUwkSlLqqgkXsxnp/PwptFOL2GL63Y1IrVBuTyE6LayEqYuijy
-sjLCqAdVykTEerVSpcoqNxNOD09lsQhkkuSPRmzzGr61MvGXk7wEoRsV1wn+vRX5CqSrFEfB4FIk+l5n
-68GeOlFd4lTJttUDnhOrHCeCJzo6vIYl5qAk/KMrEP5tEKRoPDumt9SZLLfukUddbYT3e1+YqlQyVXFf
-RDITSyWiPC3AikbFbhEqi8ptUan4aHeSOitADIz8zWlAZCFLlsk/qydcmlyCcej/DYhShtTI8mpHk09p
-8VSVn1tp+/PXL/SjyWRhNqBSz3ll842dK8/E39/OxUrDKrYGnvsDZt3GdVqAE/SSfK0jcL2OSe2vX2il
-dGt+SfDJT0m1P/eFgr9hcnBpct1UGhRqVKIikOm++9JFwc7AvAa2yNprJexm4de/Vxo+vBcrtVEYvFGe
-rfS6LmWlYTNwI0BokoCk8IwnvbNPDKJsNSQvTPJI4qICncGoE1VFJ+Sy8XI4EB8gmlGttcoAACoIYAGL
-KRL8SOJ7ZDpQOYVQNUdiuRVlnWUYnkE3WnEMzLcbqH8/GwbhmZ3x2KKaW9ay1kl8zKsaNmtfgFwMetg2
-2KAIPAy0wcl4ICu2ArsBvPQZyWhkpmCZgDpgYxn/swYPjQMZRXkZo34Ojjo2bFAJrItwKh9YBOBkoSK9
-AsyFFcboK0boLNZsS7AC6hOeVbJcq+ou1iV4Tl5uhyIvWC4sYksys7xMYY/gCXmvMnzUoiUphUAJGyNF
-rJzwqMwzgApeJvxGW4ZfDhCFYUdxw3QWJXWsxDKH7VnVsHr8Bb4tFe4UuH4CmA7Y3UNDdTDDHLX7jjqJ
-gITYMewyfvQY0pnMsW10Bpu3yaLSKUKaWg/ILIHnFP5aaJNoRskqd6EMc9BWZHq9qVB8qmP63EfPbZZl
-7LANbqWsaL6NTFb0RZ+0lzv6I26leRbLrcEnvpfpIR+dn70QL8S39J8yB8w5qU15gsGTnBhQ9ORTLuwC
-tU1GuLZhV/YrJ/oPC0dbDHcV/54kn36VbIeKe0K/+wqFixriYbiLYqWqYPMQspCC1FWeQvBFFBQb2LGE
-I8rhCm4pyXGQwj6RbAeBc1vrjTQ0VkZjxm0nAVkuyJ288Iwk3qETuBhF6AB9yCuDe6WKxt8xZPApiwEg
-PKvTJSwPEB0lDES4IiK0AbwQclmDc2UYEOZeUH4nCYEThyNTuQWYZxpA+hiwYHXH9jqgkCwKsA7AEA7z
-1kYAQMoeDHp/BYk0lfgrKdwXj0rdg0AOO29QQKMgPKoNRw99PDSSmFhX8TsaDAblfweOh74UN7PwfTgZ
-X47nYjb+r9twNr4Qbz6IN6Pzn25vxNXoenQ5nu1luV0UB49A3CUH1BjEoGokIRUOxAItBf9VtEfkSlIE
-pfql1mwM8bgBtK0NeoDcQRpKLpQ3cDKDs0GSiWlnWpLGRIeQXMioqpEfS/gZFMB8DGizyR8RjYAGAfok
-4CVMVVDfPuS2qgPr+AisArKSjPsBeA5pVgFO4w50c+m6BH/a47wcmJez0fVCzMeT8fmiD9adTEcXfTD4
-9Hw8n/fFZHr+k1iM3kzGc/z1ZhKej7AcEOeTcAwPwqdvB9/uBDslCUf7Tl8Mvuc0AHqXR8JOOBm9H4ur
-6XW4mM4+IUVzVABK5+IRI8IBMeKLaSSR6q0IP+0X0phHSNhNCLb2s3tHZkwhuaOl2wAF92gZgiNIAe4g
-+P5GRxu3RxSyaQ6p8y8vXlCqf8h1LAqVFxCbOYtheuu4BAWtdRFdDRonX4x+Cq8vrVPPYSELqotq8kag
-r7CGtKnk+gIZCbr0a/FFFImXPT5LqqGleOi+47N1NeRvKdHT3y3wgvOXqiWF+MQQwyXPlK3PXNHVWpZr
-vZ5RuGTQ74icIDwj+fh0YGnz+RllOKTM52eUjwbiBt1YkbkekfVQdOUZGKLLPdy0HdRySDkgE1p1POrc
-ArIqKd6cKbth8xVmtZS9yz1p9cJiieGlNGhPmOSiFs3pASV6ITgviAd3ATe+H4jRCmIIqbIESNCWqBJ+
-Q80W3eNmsHu64oEmWSrALpmgx7HlED8K2g+yaYBElRafqUfUAnfWMiOdPSDjt+TWSm2sz0GAoWNLdsJa
-XBQ/vQJ5qc7qCkT2gNQS8YcgfN0uOuCR37txRwLCnYxUOc7bqkzcFvkhaA22hyrjB8zPsVrJOqn6zBfb
-ToBGyFbWGB5rxLIpyW3J5MhvE/XO+iuwMKxRfwSZ2rQan774d+f1DiDQ7b1J8Bkw11vws1Q+6bROxexm
-2qdtJ8LhGhz2IWdPNgUbglSDLzJwnbiOeH9YGaxQaJdJhc+tFtT+zYX20YJB9ajkveM3LOJuldRmc1dE
-lSuVHog5Jri2BrbezKY/z/eAa1nmj4Z1Bg8C/aCaQaPJB6kTgkC7ZqYJiBIwVpfCYYyOh33RGAxx7kvi
-sZ0TauOqgkKqZ8tluVyW6kFTDggBbh7ciLZYtmwsT3Xl2J4V4oiV7XqRL0EMgI9j96ydNFYVLNNYg1N1
-68p0TCS0s1yk45+1YcaqJAau3RNLEQoJTAhjitgDFEVVBOStlLADDXtl24ki1xkRG4wPtLUnTxRaRexS
-DhlKlZARdIaJhSI8aGnzF1k70Zg/d7HPOchsPIccv+chbUaz3UcvpX3J5K536ac0HXsJrS2qd7LaFdaO
-BoK3hWOV5fV641Nvm8L92nzo9azgY2mqf0OgB3fnVIVbARuNTu6UY8c50HZ8FgFjNjpqRlK3AIqQCvIV
-t2WoYfA6eDY/+9fZYOhpYDeC+GPW1lOtRvDv75seR3ZEcz+PObO3QFPFOdDZHhBcbYFtBctNxPPj50df
-v9Ljztw80rZqpMftOnHyr7Urf0kTHOvsGCdo7e0YAWCyxY+mUf17tsC2piyMYYot1bpOZIkJfFXmadMd
-gfWqjPzapVGHAvgwAwsyqcY9ubeMW6KNqZX5ARJf4HfLpPVCwB9sDkcdoWBJXTW9avoM6Q3ICNPCKALU
-A1bDEJgocmpTyaq22F9hZRVBas2IlBDDQSGrUim0SBuMbZ2GtCVASoQD9ltSgI5hRd0BrB2aaCTXQ48k
-1Wzr+6hdBxVTiJw7vhN0ot/W1XYjCLy7gv1QBhdHjstMU0DeEcZsBsHPuGYSw8iAupIk4mMUED4PNM1O
-9ZkSaKIfJSNOm1M7ra2BEOMnmVIdshJNKB479aTfCDpcHH5dGIpfcZFu7Rsss/8xtOKW1k7HT2IwGHhx
-4bJZBwebrmk3t7nCEIcxaXEEqtsj52IbmbfC7u2OFLuBLTC4Nr4BtEeEfw2Oo3F3qDaRxlJP8N20CCyF
-qg1m6fOzDx+Or66OLy7Eu3evr65ez+dDwWlV9HTmHMZAjiu4snlz5ppOGktPYF+wq7/UOUT6MIC1QzQ9
-UC8UY2ijwBcoxCEaHUcDBlhxZ+FoENiFGiDBxLLaxLM60K5o4rlhw7I9asKmBLg5Fxn7Xo79I9kU99av
-e+h01NKCMdFGZmuY+RHYudnownFlSprBUq3opBEFwVKOBoJioY24vX4rN7p3z1zQAai3Q9bSBacRwLCi
-JhN8wnGrnMaRoKYhmOgMCwKNBucWD9URsijKvCiRK7oE/oXaunMn561BolYV/yhtbQ8PALzFtXKqPcot
-+4vfXUKoA1gmgoQcP90mucQNpAbeWj/sMhTwVpPXJWTX5jDhQP0GOmXfVCJV2F2xTTKXEvB44kHHlCv6
-WJPhImzBVzO1D7oB5XxuVWcRWksmuto6WB2Id669VTVcqZmKDqOac6wAVuLCx51QgGo298CApi0CSEBO
-sFR+t3A0W4SjiUc3f26bd+2pnjR+FiMza0oafr6wmEAP4Gjsm4LirnPXR2QIZAI5C+nag+q0augpxN6d
-k8DBHg2EmVin9gjx9efwd6/bPtyXFZ6xpNOh7bzwny+HlGS+SLzV6bTvRLS43XRox2B2bMuy0e1JH2xY
-Zg6dWB8FjFndA3E3rwI2Eu9ij+MisJNZ99CzBa+mq4f9m85Reoc8OR+HeodCKsoLdxbFMEWCLBeHrW6D
-iKtVQkGLgQPL6ezUxDh2NNcp9ahQqa4VwPPRx5400v11vzmzcO6FnjKKHyA6YVsOVA/zs5U0SA7btImB
-2GsWxevgJbWaM2ofDX1BcqkpXD+rLuWghi6ReZzKLLP1i4tSPuKng1pjZ9vbwh6EZ6Sa7vpkuuCCumV+
-XV292hklNa3HzqBD5xg4uonu3lJFEpGMqBaRRe6QOW862q9lb25nl/uVLJ0u5Unc9jSajqLXIW0ai/sW
-qZwQvPCingrt+TL6QezKUK/f1BzifDaS+URoeGCq7olU6PVdfhsfWMIB8ucBA1oGWxOPdKDu+oT0ZHPi
-fWg5TS3SFCr4DPVQwDqQGTFQ/L7QF/W/WfO43B7Do3sodj6dzi7C69FiPBdvpzP/wIPhKsrp+F9iPxPL
-Dm7YdXssnbzWaYC1J45tgeRLxJ7NvkCwVUtK/tgFCXDsRHM39xj7Pge3sFuqEkOEQCwSud1TGE3gyWx7
-2x5P4IIOn0SaknXXtpHICBtGpWJb4hHfIfEYnP1Oe79tYrXlXrgSl4vwwnTrIZ9q2CVgwkhyMB+nJ1yP
-bcB0GL+/SsBgexwB8AEyveqj5YEpMG+NpRaty4ieWr929xIIeHOsW7zq7Ijq3mC75xAOyXF9lRdCbLBH
-2daCdCTLNTQaGpvVmvJNAMFUamV7+v4Gec0+jzBNppeIam3MwtycM3AHvDLMQX/8iSOTr3JKYqSfdcRw
-1ek3ALWt0CvbE36sriyX5+PuzqUA7MWSADSpymJis5rZQOCl6UdZRRtA/3yNeWngdzDPp+/H1MIcgbHm
-CxFevx9fL6azD1DtXo2ub4FtcptzLKZvYRDnB0jenIVtBmgbxLgGuhzEl/r8oPcOmr17enSS0NCZgetR
-Y2+f7yE1sj1wVBFuAlWYW89X6Yze7y84Ov06eBY8A08RJ9h2PqnyExx1Z0f9Ks7qTFHmBW2iFBLFP4Jn
-z+hrl8zdD7+K/376dfk/bbF/fC5sfYLlCcxS+H+fENM8WUb36bq8W+Z5BU/KYgBVl/CvmJ0MWiyNlyBl
-A1WmvVHy2WEp0Ek8oP3MqOAaovu1i25LMdi2jj64zITHymhI+hE18AjJvdr2bW9GI+HAei6g417ejI4f
-9IXjIFxb+FLYLd1Rpef75DfEvjx/qqDGWA0cUGEMLxXEpA3g5uSNUQD+i4cWhC4VNt28mckhW7+w1wWR
-Tn9itV6cvLkNJxccJXy+Px/P3uPFjCbv0flUVziyyE640i2+tnOWYF/endS2ByoeqgWwCrzKioeXPJxA
-gBr6RqZYZJiKGzt2bkuAuT9ktgDIT0QAjYWyg3clfuPaIc/sd4V5loPdYi4m9vItH8B6awB0YnO0DICu
-rYAAbFZ4p2nc4vGietB2LS03b+450C03EJOhccBBwhsh4xjj1zaPOpzeVo/7dxPpxuZOeYS93RqvR9gN
-61yWwBo+LartQIziWHOLAJsLzsltcR0ABGPTmIo+7hlzKhesg9PLSnW0nW9PUTMDlMeOs3/BE7gY5P9I
-7V8c50Y35d+mrUp324tSPwABOCnqJbgaxSQe4j/IhMoVGztOeUKhgO6TuH6eF7ieKfcWQve/VnmNmcmd
-6bu0xNUtm4Nb8rYF54fMD9QHwVtCCF3ueXgsxVvAXQ33rsRYVYLujnWUaIGC9tY3Qs82hppGorn3Zmwm
-C6ivnWdts9JlO/ucu/ktCCSxfWzbYR1LeTfiaZ/YKwpVpppOVsl/D7llc+pPvUmws2tgtvNLuryC9vYJ
-U/M7rT/omH0g3tI6wVkSvnRlTwzo0ANnaZqU9IqDO23cPZUhnwk2th81v70Zz8j3wG3XaiCEpT++Wox4
-Kzxk7u8CKuYIuuZnDzOREELqL9yJAd5phbravnmx0k9MzumOWJ9PY+wphFsYoGexf5tOFYpvgru0yBdI
-9o5DHIMh/19LDcxTNCnjeroI39oSa77/jgnmDDwlXG3pgDxFJkfXixln3NESrgmN0VTNXBKEZ/glmPyO
-ZdCdpVitdMbF2f799/5OWUwz9oCsOz8ISJLmitxK52OHT96cdhrRRoZnVu0DKvXZdT8zuz+5t3z/ciXC
-Pou+g8yAN63sCdNuNw1yQZ7idRJCXrKsqZf/VBF1gt2FcItb9kIDaGhBtzkxbwqfDtAZl0P8myLno8kE
-2cH0diFuZxPc7nCv4YqRhZ1ebKgmOAySNh8ZkONSMelfbDB8p8JeF8+xzuOjsDTPtCW8+Wofigdirpq2
-PmwLzgtOfFeXQHhpQtc29X+h+Yf08sO+8/hMiG+mjq/PZx/c61PENfjgF2HEvSOBjbld6kcXRJ74bBh7
-0pkFQ5U96DLP+EKqK2ApiwfPQcQdPPu839yf0k3Ds9DuAhVEUV6ozJhE9AC8sLLE6sMpkBN8AK02KrP0
-CPXxaOdOIUOb0qFv5GCP3VOS1vrNySyBEe0rtxvpBGIHGPdv8/SgGP0lAUr2qr08695IAd0Cn98fMQHH
-RlKkY4rFBK/mIJ2AWCN6+ahd/dS8NOOxfWwLZgZVwzP2JZJoCqCEy8N3fOn2AHW39TlGKW6OS/7GH+vN
-RHCL+QFfncuMCmwRkua2hHcDEVhRhyY+cCJ8ca6H3j9K5UeYcv7qiJsCdvntQgOwnoowBdHRFkQRJ2Pe
-iP7u8UePNhf72d7NvSNUAvO6V/04bXasgGXP3k7yhWX0Q6RjaD9dObfy3dsGPfqUMzIHD+KoPVENjK5q
-jr/lAU5He+9FGlA6qs6y3A6AmZubj7gkFZPeCH8QeEFbHgrbDFtBxqtLtYul9BKKtazbqiVfnfROpxvl
-7C0A7qa7OqfhX664POBW+CAZAh72bIXq2ZP+3brlFJtXEPzYxGEnZHrH7QFprxB2OSrOwgoCxEHBb5tF
-LPAlfJpa89vxCqi8exUMnsL/xXf2JSzGhxhhdATpqqjG2cOPFqmGjuJ1kLQfEANp9sWeJjMvY+5rTRCT
-ApooPSv3Cj6duxsrwGdisK+DUxKoK3v6TalerbnJ7QARnxDHiCl/+U68eim4cqN1WfBCrZte+ncw28x2
-wDqbb98YIdPBRrrttqvtGJsVsAb58U89ar50Jzyih4/zOYSfZz0rx9Z2zQWLP/iaUVuMeldHvNPubA+9
-ACWMqVOALpcoKsZNWizffUZzHx0qqf+fVv9V1+X8g6BTMbpdvJvOwAEwuG70x49anBX4z38mKocKJa7N
-ADBz2DxwPr35MAsv3y36YhKej6/n474YXV+In0czfI3hAyDMu3COL15czkZXgj++Dy/GF+L5aA5/P+fh
-IcwL/Gl0/UGM/3YzG8/nYjoT4dXNJBxfBFZaiG9rhNfnk1tsx/SbpybhVbggrt0Xi3dj95hoHxPTt8HV
-eHb+Dv4cvQkn4eIDzfs2XFzjXHgqMuIT9vPbyWiGJ2I30/l4wABJzVPg/YiVJfArk68qvMD/g9eUBIZW
-lXqJV5x15d5ZTfPYXoaBMhichEo/qOuMI2+X17fikoA8ETdckE8g9jNs78O8+I3ZtCdLb3H2uZ09eIvF
-NcOLQHaKgPryBzQcjr1RZSJGZaXppXgrFdIM4Nztdfg3hg+d6kSWAd/6NG2TlW7Mif8F18I6NFkXyTfY
-Umm+kFbuN/5rQZDiE57G8JmQ/zYJ9nY0ki3ZaR5/zgDNiUZQebvQtgUeS101F0w6phG+acIsGvTF9/8h
-FvjSrgpusGHSF/Man3716kVfvMkhcmDk1UiIFy9PT0+PT1+9+KsQt/PRoHH19+PZnCjvTt77U/ND8GNU
-V8H/AWW6Ue3DQAAA
+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
 DOC_EOF
 [ $perldoc -eq 1 ] && perldoc /tmp/bmdoc.$$ || $pager /tmp/bmdoc.$$
 rm -f /tmp/bmdoc.$$
@@ -982,54 +995,50 @@ parse_config()
         grep -q "^webhook_script" $CONFIGFILE && webhook_script=$(grep "^webhook_script" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^cloud_storage" $CONFIGFILE && cloud_storage=$(grep "^cloud_storage" $CONFIGFILE | cut -d"=" -f2)
 
-	case "$1" in
-		'restore'|'build-slave'|'logs'|'inventory'|'inv'|'list'|'purge'|'print-latest'|'replication-info'|'version'|'print-latest-id'|'backup-type'|'validate-pit'|'setup-replication'|'')
-			;;
-		*)
-			if [ "$host" = "" -o "$user" = "" ]
-			then
-				echo "Please set backup_host and backup_user in $CONFIGFILE."
+	if [ "$1" = "backup" ]
+	then
+		if [ "$host" = "" -o "$user" = "" ]
+		then
+			echo "Please set backup_host and backup_user in $CONFIGFILE."
+			exit 1
+		fi
+		if [ "$target" = "" ]
+		then
+			echo "Please set target_directory in $CONFIGFILE."
 				exit 1
-			fi
-			if [ "$target" = "" ]
-			then
-				echo "Please set target_directory in $CONFIGFILE."
-					exit 1
-			fi
-			if [ ! -d "$target" ]
-			then
-				echo "Target directory $target does not exist."
-				exit 1
-			fi
-			if [ "$compressor" != "" ]
-			then
-				ct=$(which ${compressor/%\ */} 2>/dev/null)
-				if [ "$ct" = "" ]
-				then
-					echo "You have configured ${compressor/%\ */}, please install it first."
-					exit 1
-				fi
-			fi
-			if [ "$encryptor" != "" ]
-			then
-				ct=$(which ${encryptor/%\ */} 2>/dev/null)
-				if [ "$ct" = "" ]
-				then
-					echo "You have configured ${encryptor/%\ */}, please install it first."
-					exit 1
-				fi
-				if [ "$(which openssl 2>/dev/null)" = "" ]
-				then
-					echo "ERROR: This script requires the openssl package. Please install it."
-					exit 1
-				fi
-			fi
-			;;
-	esac
+		fi
+		if [ ! -d "$target" ]
+		then
+			echo "Target directory $target does not exist."
+			exit 1
+		fi
+	fi
+	if [ "$compressor" != "" ]
+	then
+		ct=$(which ${compressor/%\ */} 2>/dev/null)
+		if [ "$ct" = "" ]
+		then
+			echo "You have configured ${compressor/%\ */}, please install it first."
+			exit 1
+		fi
+	fi
+	if [ "$encryptor" != "" ]
+	then
+		ct=$(which ${encryptor/%\ */} 2>/dev/null)
+		if [ "$ct" = "" ]
+		then
+			echo "You have configured ${encryptor/%\ */}, please install it first."
+			exit 1
+		fi
+		if [ "$(which openssl 2>/dev/null)" = "" ]
+		then
+			echo "ERROR: This script requires the openssl package. Please install it."
+			exit 1
+		fi
+	fi
 
 	lockfile=/tmp/backup_manager.lock
 	binlog_lockfile=/tmp/backup_manager_binlogs.lock
-	[ "$(which mysqlbinlog 2>/dev/null)" = "" ] && no_mysqlbinlog=1
 	if [ "$success_notify" != "" -a "$failure_notify" = "" ]
 	then
 		echo "NOTICE: 'failure_notify' not set in config, using email in 'success_notify' for failure notifications."
@@ -1467,6 +1476,40 @@ convert_incr_to_full()
 	exec $0 restore $rf $2 "$pit" noconfirm
 }
 
+do_remote_restore()
+{
+	while true
+	do
+		echo -n "Please enter hostname or IP address of the remote restore target: "
+		read target_host
+		[ "$target_host" = "" ] && continue
+		ssh -oConnectTimeout=10 root@$target_host true && break
+		echo
+		echo "That didn't work."
+		echo "Please make sure you entered the correct information, and ssh keypair authentication is set up properly."	
+		echo
+	done
+	if [ "$BM_BACKUP_PATH" = "" ]
+	then    
+		while true
+		do
+			echo -n "Please enter path where backups can be found on this host (or quit and set \$BM_BACKUP_PATH instead): "
+			read backup_path
+			[ "$backup_path" = "" ] && continue
+			[ -d $backup_path ] && break
+			echo
+			echo "That didn't work."
+			echo "Please enter a valid path."
+			echo
+		done    
+	else    
+		backup_path="$BM_BACKUP_PATH"
+	fi      
+	ssh="ssh -q root@$target_host"
+	local_remote="$ssh"
+	do_restore $1 "$2" "$3" "$4"
+}
+
 do_restore()
 {
 	check_root restore
@@ -1489,12 +1532,17 @@ do_restore()
 		exit 1
 	fi
 	tool=$(echo "select backup_tool from backup_history where uuid = '$1';" | dbquery $DB)
+	if [ "$ssh" != "" -a "$tool" != "mariabackup" ]
+	then
+		echo "ERROR: this backup type does not support remote restore."
+		exit 1
+	fi
 	case "$tool" in
 		'binlogs'|'mariaunpacked')	toolcheck="mysqlbinlog";;
 		'zsnapshot')			toolcheck="zfs";;
 		*)				toolcheck=$tool
 	esac
-	if [ "$(which $toolcheck 2>/dev/null)" = "" ]
+	if [ "$($ssh which $toolcheck 2>/dev/null)" = "" ]
 	then
 		echo "ERROR: tool $tool needed to restore '$1' is not installed. Please install it."
 		exit 1
@@ -1509,11 +1557,11 @@ do_restore()
 			target=$2
 			if [ "$target" != "-" ]
 			then
-				if [ -d $target ]
+				if $ssh [ -d $target ]
 				then
-					if [ "$(ls -a1 $target | tr -d ".\n")" != "" ]
+					if [ "$($ssh ls -a1 $target | tr -d ".\n")" != "" ]
 					then
-						echo "target directory $target must be empty."
+						echo "ERROR: target directory $target must be empty."
 						exit 1
 					fi
 				fi
@@ -1579,6 +1627,7 @@ inventory_cleanup()
 extract_binlog_piece()
 {
 	path=$(echo "select bulocation from backup_history where uuid = '$1';" | dbquery $DB)
+	[ "$backup_path" != "" ] && path=$backup_path/$(echo $path | sed -re "s/^(.*)\/([0-9-]*)\/(.*)\/(.*)$/\2\/\3\/\4/")
 	key=$(echo "select cryptkey from backup_history where uuid = '$1';" | dbquery $DB)
 	[ "$key" != "" ] && export enc_key="$key"
 	if [ ! -f $path ]
@@ -1612,10 +1661,12 @@ extract_binlog_piece()
 		then
 			if [ $initial_bf_done -eq 1 ]
 			then
-				mysqlbinlog --no-defaults --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | mysql -A -S /tmp/backup_manager.sock 2>$aux_log
+				#$mysqlbinlog --no-defaults --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
+				cat $bxfolder/$bf | $local_remote $mysqlbinlog --no-defaults --stop-datetime="'$requested_binlog_ts'" - | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 			else
 				initial_bf_done=1
-				mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | mysql -A -S /tmp/backup_manager.sock 2>$aux_log
+				#$mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
+				cat $bxfolder/$bf | $local_remote $mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-datetime="'$requested_binlog_ts'" - | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 			fi
 			if [ $? -ne 0 ]
 			then
@@ -1630,9 +1681,11 @@ extract_binlog_piece()
 			last_file=$bf
 			if [ $initial_bf_done -eq 1 ]
 			then
-				mysqlbinlog --no-defaults --stop-position=$requested_binlog_position --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | mysql -A -S /tmp/backup_manager.sock 2>$aux_log
+				#$mysqlbinlog --no-defaults --stop-position=$requested_binlog_position --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
+				cat $bxfolder/$bf | $local_remote $mysqlbinlog --no-defaults --stop-position=$requested_binlog_position --stop-datetime="'$requested_binlog_ts'" - | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 			else
-				mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-position=$requested_binlog_position --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | mysql -A -S /tmp/backup_manager.sock 2>$aux_log
+				#$mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-position=$requested_binlog_position --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
+				cat $bxfolder/$bf | $local_remote $mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-position=$requested_binlog_position --stop-datetime="'$requested_binlog_ts'" - | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 			fi
 			if [ $? -ne 0 ]
 			then
@@ -2280,25 +2333,19 @@ perform_zsnapshot_restore()
 
 perform_maria_restore()
 {
-	mariabackup=$(which mariabackup 2>/dev/null)
-	if [ "$mariabackup" = "" ]
-	then
-		echo "ERROR: Please install $tool first."
-		clean_exit 1
-	else
-		mb_ver=$(mariabackup --version 2>&1 | sed -re "s/(.*)server (.[0-9])\.([0-9])(.*)/\2.\3/")
-		[ "$mb_ver" = "10.1" ] && mb_all="--apply-log-only" || mb_all=""
-	fi
+	mb_ver=$($ssh mariabackup --version 2>&1 | sed -re "s/(.*)server (.[0-9])\.([0-9])(.*)/\2.\3/")
+	[ "$mb_ver" = "10.1" ] && mb_all="--apply-log-only" || mb_all=""
 	path=$(echo "select bulocation from backup_history where uuid = '$uuid';" | dbquery $DB)
+	[ "$backup_path" != "" ] && path=$backup_path/$(echo $path | sed -re "s/^(.*)\/([0-9-]*)\/(.*)\/(.*)$/\2\/\3\/\4/")
 	key=$(echo "select cryptkey from backup_history where uuid = '$uuid';" | dbquery $DB)
 	[ "$key" != "" ] && export enc_key="$key"
 	rm -f /tmp/xtrabackup*
 	if [ "$target" != "-" ]
 	then
 		echo -n "extracting full backup $uuid... "
-		mkdir -p $target/full
-		echo "--> cat $path | $unencryptor | $uncompressor | mbstream -p $parallelism -x -v -C $target/full" >> $logfile
-		cat $path | $unencryptor 2>/dev/null | $uncompressor | mbstream -p $parallelism -x -v -C $target/full 2>> $logfile
+		$ssh mkdir -p $target/full
+		echo "--> cat $path | $unencryptor | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/full" >> $logfile
+		cat $path | $unencryptor 2>/dev/null | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/full 2>> $logfile
 	else
 		cat $path | $unencryptor 2>/dev/null | $uncompressor 2>> $logfile
 		status=$?
@@ -2309,8 +2356,8 @@ perform_maria_restore()
 	[ $status -ne 0 ] && return
 	open_files_limit
 	echo -n "applying redo logs for $uuid... "
-	echo "--> mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile
-	mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
+	echo "--> $ssh mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile
+	$ssh mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
 	status=$?
 	echo
 	[ $status -ne 0 ] && return
@@ -2323,20 +2370,21 @@ perform_maria_restore()
 	do
 		incr_check_position $id && break
 		path=$(echo "select bulocation from backup_history where uuid = '$id';" | dbquery $DB)
+		[ "$backup_path" != "" ] && path=$backup_path/$(echo $path | sed -re "s/^(.*)\/([0-9-]*)\/(.*)\/(.*)$/\2\/\3\/\4/")
 		key=$(echo "select cryptkey from backup_history where uuid = '$id';" | dbquery $DB)
 		[ "$key" != "" ] && export enc_key="$key"
 		incdir=$(basename $path)
 		echo -n "extracting incremental backup $id... "
-		mkdir -p $target/$incdir
+		$ssh mkdir -p $target/$incdir
 		rm -f /tmp/xtrabackup*
-		echo "--> cat $path | $unencryptor | $uncompressor | mbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
-		cat $path | $unencryptor 2>/dev/null | $uncompressor | mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
+		echo "--> cat $path | $unencryptor | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
+		cat $path | $unencryptor 2>/dev/null | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
 		echo -n "applying redo logs for $id... "
-		echo "--> mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir" >> $logfile
-		mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir >> $logfile 2>&1
+		echo "--> $ssh mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir" >> $logfile
+		$ssh mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir >> $logfile 2>&1
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
@@ -2345,22 +2393,22 @@ perform_maria_restore()
 		[ $status -ne 0 ] && break
 		current_position $id
 		binlogs_starting_point=$id
-		rm -rf $target/$incdir
+		$ssh rm -rf $target/$incdir
 	done
 	[ $status -ne 0 ] && return
 	echo -n "Finalizing backup... "
-	echo "--> mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile 
-	mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
+	echo "--> $ssh mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile 
+	$ssh mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
 	status=$?
 	echo
 	[ $status -ne 0 ] && return
 	tail -1 $logfile | fgrep -q "completed OK"
 	status=$?
-	mv $target/full/* $target/
-	rmdir $target/full
+	$ssh mv $target/full/* $target/
+	$ssh rmdir $target/full
 	if [ $status -eq 0 -a $point_in_time -eq 1 ]
 	then
-		bxfolder=$target/.backupmanager
+		[ "$backup_path" = "" ] && bxfolder=$target/.backupmanager || bxfolder=$backup_path/.backupmanager
 		apply_binlogs || exit 1
 	        echo "Done applying binary logs."
 	fi
@@ -2516,41 +2564,42 @@ build_config()
 		exit 1
 	fi
 	base64 -d << DOC_EOF | gzip -dc | sed -e "s/\$VERSION/v$BM_VERSION/" > $CONFIGFILE
-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
-GpNh6+zQob0IX4Pyo/8CWBMNw5ETAAA=
+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
 DOC_EOF
 
 	echo "Created $CONFIGFILE. Please adjust it for your setup." 
@@ -2561,8 +2610,8 @@ check_server_path()
 {
 	while true
 	do
-		[ -f $server_path ] && return
-		echo "NOTICE: could not find MariaDB server executable '$server_path'!"
+		$ssh [ -f $server_path ] && return
+		echo "ERROR: could not find MariaDB server executable '$server_path'!"
 		echo -n "Please enter its location on this system (including filename): "
 		read server_path
 	done
@@ -2574,17 +2623,18 @@ mariadb_instance()
 		'start')
 			check_server_path
 			echo -n "starting MariaDB auxiliary instance on $target... "
-			echo "server_id=987654321" >> $target/backup-my.cnf
-			echo "lower_case_table_names=$case_insens" >> $target/backup-my.cnf
-			$server_path --defaults-file=$target/backup-my.cnf  --innodb_file_per_table  --skip-grant-tables --basedir=/usr --datadir=$target --plugin-dir=/usr/lib64/mysql/plugin --user=root --log-error=$target/backup_manager_mysqld.err $limit_str --pid-file=$target/mysql.pid --socket=/tmp/backup_manager.sock --port=65432 2>> $target/backup_manager_mysqld.err &
-			instance=$!
-			echo "(pid $instance)"
+			$local_remote "echo 'server_id=987654321' >> $target/backup-my.cnf"
+			$local_remote "echo 'lower_case_table_names=$case_insens' >> $target/backup-my.cnf"
+			$ssh $server_path --defaults-file=$target/backup-my.cnf  --innodb_file_per_table  --skip-grant-tables --basedir=/usr --datadir=$target --plugin-dir=/usr/lib64/mysql/plugin --user=root --log-error=$target/backup_manager_mysqld.err $limit_str --pid-file=$target/mysql.pid --socket=/tmp/backup_manager.sock --port=65432 2>> $target/backup_manager_mysqld.err &
 			sleep 10
-			kill -0 $instance 2>/dev/null
+			instance=$($ssh cat $target/mysql.pid 2>/dev/null)
+			[ "$instance" = "" ] && return 1
+			echo "(pid $instance)"
+			$ssh kill -0 $instance 2>/dev/null
 			return $?
 			;;
                 'stop') echo "stopping MariaDB auxiliary instance"
-			kill $instance
+			$ssh kill $instance
 			;;
 	esac
 }
@@ -2593,7 +2643,7 @@ mariadb_instance()
 
 dim_prepare_memory()
 {
-        avail=$(grep ^MemTotal  /proc/meminfo | sed -re "s/^MemTotal:(\s*)([0-9]*) kB/\2/")
+        avail=$($ssh grep ^MemTotal  /proc/meminfo | sed -re "s/^MemTotal:(\s*)([0-9]*) kB/\2/")
         prepare_memory=$((avail/4))
 }
 
@@ -2640,7 +2690,8 @@ build_binlog_list()
 
 position_from_binlog()
 {
-	mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER $1 | fgrep -v Warning | fgrep -C10 -m1 "Start: binlog" > $aux_log
+	#mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER $1 | fgrep -v Warning | fgrep -C10 -m1 "Start: binlog" > $aux_log
+	cat $1 | $ssh $mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER - | fgrep -v Warning | fgrep -C10 -m1 "Start: binlog" > $aux_log
 	lb_ts=$(grep "GTID " $aux_log | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)\s+([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/ 0\2/")
 	[ "$lb_ts" = "" ] && lb_ts=$(grep "created " $aux_log | sed -re "s/^#([0-9][0-9])([0-9][0-9])([0-9][0-9])(\s*)([0-9]*):([0-9]*):([0-9]*)\s(.*)$/20\1-\2-\3 \5:\6:\7/" -e "s/( )([0-9]:)/ 0\2/")
         binlog_pos=$(grep "^# at " $aux_log | head -1 | sed -re "s/^# at ([0-9]*)/\1/")
@@ -2692,6 +2743,9 @@ case "$1" in
 		;;
 	'restore') 	
 		do_restore $2 "$3" "$4" "$5"
+		;;
+	'remote-restore') 	
+		do_remote_restore $2 "$3" "$4" "$5"
 		;;
 	'inventory'|'inv'|'list') 
 		disk_space

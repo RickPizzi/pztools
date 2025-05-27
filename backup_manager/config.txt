@@ -6,12 +6,13 @@
 #
 # SERVER TO BACK UP
 # MariaDB host, user and password for server to back up
+# Note: these can also be passed as environment variables
 #
-backup_host=localhost
-backup_port=3306
-backup_user=root
-backup_password=root
-backup_socket=/var/lib/mysql/mysql.sock
+backup_host=localhost			# or env var BACKUP_HOST
+backup_port=3306			# or env var BACKUP_PORT
+backup_user=root			# or env var BACKUP_USER
+backup_password=root			# or env var BACKUP_PASSWORD
+backup_socket=/var/lib/mysql/mysql.sock	# or env var BACKUP_SOCKET
 #
 #
 ########################################################################
@@ -23,6 +24,7 @@ target_directory=/mnt/backup
 #
 # date_format:
 # format of date for target directory folder creation
+# Note: changing this may break some functionalities at this time
 #
 #date_format=%Y-%m-%d
 #
@@ -39,8 +41,8 @@ free_space_percentage=20
 # compression options -
 # if commented out, no compression will take place
 #
-compressor=pigz -p 2
-uncompressor=pigz -p 2 -dc
+#compressor=pigz -p 2
+#uncompressor=pigz -p 2 -dc
 #
 # encryption options -
 # script will generate a cryptkey and export it in the environment
@@ -70,10 +72,29 @@ purge_days=15
 #
 #purge_incomplete_backups=1
 #
+# set cloud_storage to 1 to tell the purge function that backups are 
+# stored in the cloud so no local filesystem purge operations will be attempted
+#
+#cloud_storage=0
+#
+########################################################################
+#
+# BACKUP STATUS NOTIFICATION
+# a webhook script can be called after backup completes
+# can be used for backup status notifications e.g. via Slack
+# script will be called with following parameters:
+# - backup tool (mariabackup,mysqldump,...)
+# - backup level (0=full,1=incr,2=dump,3=binlog)
+# - backup exit status (0=success,1=failure)
+# additionally, customer name will be available, if defined,
+# in environment variable BACKUP_LABEL
+#
+#webhook_script=/usr/local/bin/slack.sh
+#
 ########################################################################
 #
 # EMAIL NOTIFICATIONS
-# will send an email in case of backup failure, requires mailx
+# will send an email after backup completes, requires mailx
 # and proper setup of the server's mail subsystem
 #
 # if commented out, no notification happens. if you want failure notifications,
