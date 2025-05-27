@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.5.4
+VERSION=1.5.5
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -522,7 +522,7 @@ do
 					t_ipaddr=""
 					t_extra=$(echo "$t_extra" | sed -re "s/^(.*), query id (.*) (.*)$/\3/")
 					;;
-				'Waiting'|'closing'|'After_log_apply_event'|'Delete_rows_log_event'|'Update_rows_log_event'|'Write_rows_log_event')
+				'Waiting'|'closing'|'After log apply event'|'Delete_rows_log_event'|'Update_rows_log_event'|'Write_rows_log_event')
 					t_extra="$t_ipaddr $t_user $t_extra $t_extra2"
 					t_user="SQL_thread"
 					t_ipaddr=""
