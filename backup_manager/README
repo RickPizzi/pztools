@@ -1,23 +1,25 @@
 
 MariaDB Backup Manager - a backup-tool-agnostic backup and restore script for MariaDB
-(c) 2018-2024 Rick Pizzi (pizzi@leopardus.com)
+(c) 2018-2025 Rick Pizzi (pizzi@leopardus.com)
 
 Highlights:
 
 - supports full backups, incremental backups, binary logs backups, logical backups, 
   snapshots backups (ZFS only)
+- backup methods currently supported: xtrabackup, mariabackup, mysqldump, mydumper, zfs snapshots
 - configurable encryption and compression methods
 - browsable backup inventory
-- automatic and effortless restore to supplied point-in-time
+- can restore locally or to remote server via ssh
+- automatic and effortless restore to specific point-in-time
 - automatic rebuild of replicas from last backup, including replication
 - automatic restore test
 - automatic purging of old backups, with smart purge option
 - email notifications
-- filesystem capacity check (no more filesystem full due to backups)
+- 3rd party notifications support e.g. slack
 - workload friendly when using mariabackup (if backup lock can't be obtained in 30 seconds, 
   give up instead of locking the workload waiting)
+- filesystem capacity check (no more filesystem full due to backups)
 
-backup methods currently supported: xtrabackup, mariabackup, mysqldump, mydumper, zfs snapshots
-
- -- run backup_manager without options to access the online documentation --
+Run backup_manager without options to access the online documentation and
+see config file comments for more details!
 
