@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.1"
+BM_VERSION="4.7.2"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1375,7 +1375,7 @@ sqlite_inventory()
 		echo "There are no backups in inventory. "
 	fi
 	rm -f /tmp/bi$$
-	echo "Backup directory $target $disk_space_p_used% used, $disk_space_avail left" 
+	[ -d $target ] && echo "Backup directory $target $disk_space_p_used% used, $disk_space_avail left" 
 	echo
 }
 
@@ -2523,6 +2523,7 @@ pit_xid()
 
 disk_space()
 {
+	[ ! -d $target ] && return
 	disk_space_avail=$(df -h $target |  tail -1 | tr -s " " "\t" | cut -f 4)
 	disk_space_avail_k=$(df -k $target |  tail -1 | tr -s " " "\t" | cut -f 4)
 	disk_space_p_used=$(df -h $target |  tail -1 | tr -s " " "\t" | cut -f 5 | tr -d "%")
