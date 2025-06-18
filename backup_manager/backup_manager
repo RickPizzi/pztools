@@ -1,3 +1,5 @@
+#!/bin/bash
+#
 # MariaDB Backup Manager: a backup-tool-agnostic backup and restore script
 #
 # Please send bugs to pizzi@leopardus.com
