@@ -1,5 +1,3 @@
-#!/bin/bash
-#
 # MariaDB Backup Manager: a backup-tool-agnostic backup and restore script
 #
 # Please send bugs to pizzi@leopardus.com
@@ -8,7 +6,7 @@
 
 # begin 
 
-BM_VERSION="4.7.3"
+BM_VERSION="4.7.4"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1237,6 +1235,12 @@ perform_backup()
 
 perform_binlogs_backup()
 {
+	mysqlbinlog=$(which mysqlbinlog 2>/dev/null)
+	if [ "$mysqlbinlog" = "" ]
+	then
+		echo "ERROR: mysqlbinlog program not installed, but needed for binlogs backups."
+		clean_exit 1
+	fi
 	if [ "$(mysql_variable log_bin)" != "1" ]
 	then
 		echo "ERROR: cannot backup binary logs if they are not enabled on server."
