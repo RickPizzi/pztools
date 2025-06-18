@@ -170,3 +170,12 @@ notify_label=Rick's lab
 # (used during point-in-time restore)
 #
 #server_path=/usr/sbin/mysqld
+#
+# backup manager will NOT backup stale data and abort if replication 
+# is not running. If you want to use pt_heartbeat to check for stale
+# data instead, just uncomment/edit the three variables below. 
+#
+#heartbeat_schema=heartbeat
+#heartbeat_table=heartbeat
+#heartbeat_stale_seconds=480
+

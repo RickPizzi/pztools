@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.2"
+BM_VERSION="4.7.3"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -994,6 +994,9 @@ parse_config()
         grep -q "^server_path" $CONFIGFILE && server_path=$(grep "^server_path" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^webhook_script" $CONFIGFILE && webhook_script=$(grep "^webhook_script" $CONFIGFILE | cut -d"=" -f2)
         grep -q "^cloud_storage" $CONFIGFILE && cloud_storage=$(grep "^cloud_storage" $CONFIGFILE | cut -d"=" -f2)
+        grep -q "^heartbeat_schema" $CONFIGFILE && hb_schema=$(grep "^heartbeat_schema" $CONFIGFILE | cut -d"=" -f2)
+        grep -q "^heartbeat_table" $CONFIGFILE && hb_table=$(grep "^heartbeat_table" $CONFIGFILE | cut -d"=" -f2)
+        grep -q "^heartbeat_stale_seconds" $CONFIGFILE && hb_stale_secs=$(grep "^heartbeat_stale_seconds" $CONFIGFILE | cut -d"=" -f2)
 
 	if [ "$1" = "backup" ]
 	then
@@ -2534,7 +2537,18 @@ check_slave_status()
 {
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
-	echo "show slave status\G" | mysql -Ar -u $user $sock_str $pass_str | grep -P "Slave_(.*)_Running:" | fgrep -q No
+	if [ "$hb_schema" != "" -a "$hb_table" != "" -a "$hb_stale_secs" != "" ]
+	then
+		hb_delay=$(echo "select timestampdiff(second, ts, now()) from $hb_schema.$hb_table order by ts desc limit 1" | mysql -ANr -u $user $sock_str $pass_str)
+		if [ "$hb_delay" = "" ]
+		then
+			true
+		else
+			[ $hb_delay -ge $hb_stale_secs ]
+		fi
+	else
+		echo "show slave status\G" | mysql -Ar -u $user $sock_str $pass_str | grep -P "Slave_(.*)_Running:" | fgrep -q No
+	fi
 	if [ $? -eq 0 ]
 	then
 		msg="ERROR: replication is broken, will not backup stale data. Exiting."
@@ -2565,42 +2579,44 @@ build_config()
 		exit 1
 	fi
 	base64 -d << DOC_EOF | gzip -dc | sed -e "s/\$VERSION/v$BM_VERSION/" > $CONFIGFILE
-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
+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
 DOC_EOF
 
 	echo "Created $CONFIGFILE. Please adjust it for your setup." 
