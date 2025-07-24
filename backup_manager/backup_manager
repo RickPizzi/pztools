@@ -1446,13 +1446,14 @@ do_backup()
 
 get_repl_creds()
 {
-	if [ ! -f $(mysql_variable datadir)/master.info ]
+	[ "$MASTER_INFO" != "" ] && mi=$MASTER_INFO || mi=$(mysql_variable datadir)/master.info
+	if [ ! -f $mi ]
 	then
 		[ "$password" != "" ] && pass_str="-p$password"
 		[ "$socket" != "" ] && sock_str="-S$socket"
 		repl_creds=$(echo "select * from mysql.slave_master_info\G" | mysql -Ar -u $user $sock_str $pass_str 2>/dev/null | egrep "User_name:|User_password:|Host:|Port:" | cut -d":" -f 2 |sed -e "s/^ //g")
 	else
-		repl_creds=$(cat $(mysql_variable datadir)/master.info  2>/dev/null | head -7 | tail -4)
+		repl_creds=$(cat $mi 2>/dev/null | head -7 | tail -4)
         fi
 }
 
