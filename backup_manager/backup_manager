@@ -1446,15 +1446,36 @@ do_backup()
 
 get_repl_creds()
 {
-	[ "$MASTER_INFO" != "" ] && mi=$MASTER_INFO || mi=$(mysql_variable datadir)/master.info
+	[ "$MASTER_INFO" != "" ] && mi="$MASTER_INFO" || mi=$(mysql_variable datadir 2>/dev/null)/master.info
+	if [ "$mi" = "/master.info" ]
+	then
+		echo "WARNING: no replication info available (local server is down and MASTER_INFO env var is empty)"
+		return
+	fi
 	if [ ! -f $mi ]
 	then
-		[ "$password" != "" ] && pass_str="-p$password"
-		[ "$socket" != "" ] && sock_str="-S$socket"
-		repl_creds=$(echo "select * from mysql.slave_master_info\G" | mysql -Ar -u $user $sock_str $pass_str 2>/dev/null | egrep "User_name:|User_password:|Host:|Port:" | cut -d":" -f 2 |sed -e "s/^ //g")
-	else
-		repl_creds=$(cat $mi 2>/dev/null | head -7 | tail -4)
-        fi
+		echo "WARNING: no replication info available (checked $mi)"
+		return
+	fi
+	if [ "$(tail -1 $mi)" != "END_MARKER" ]
+	then
+		echo "WARNING: $mi doesn't look like valid replication info, ignoring"
+		return
+	fi
+	lc=0
+	while read -r l; do
+		case $lc in
+			3) repl_host="$l";;
+			4) repl_user="$l";;
+			5) repl_pass="$l";;
+			6) repl_port="$l";;
+			8) repl_ssl="$l";;
+			9) repl_ssl_ca="$l";;
+			11) repl_ssl_cert="$l";;
+			13) repl_ssl_key="$l";;
+		esac
+       		lc=$((lc+1))
+	done < $mi
 }
 
 which_gtid()
@@ -1517,7 +1538,74 @@ do_remote_restore()
 	fi      
 	ssh="ssh -q root@$target_host"
 	local_remote="$ssh"
+	replication_credentials
+	if [ "$repl_user" != "" ] 
+	then
+		admin_user="$ADMIN_USER"
+		admin_pass="$ADMIN_PASSWORD"
+		if [ "$admin_user" = "" -o "$admin_pass" = "" ]
+	       	then
+			echo "ERROR: automatic replication setup requires exporting ADMIN_USER and ADMIN_PASSWORD in the environment first. Exiting."
+			exit 1
+		fi
+	fi
 	do_restore $1 "$2" "$3" "$4"
+	if [ "$repl_user" != "" ] 
+	then
+		$ssh chown -R mysql:mysql $2
+		start_remote_server
+		wait_for_remote_server
+		user=$admin_user
+		password=$admin_pass
+		setup_replication $target_host $2
+		echo "Replication set up successfully."
+	fi
+}
+
+wait_for_remote_server()
+{
+	cd=10
+	echo -n "Waiting for remote service to start..."
+	while true
+	do
+        	$ssh mysqladmin -u $admin_user -p$admin_pass ping > /dev/null 2>&1 && break
+		cd=$((cd-1))
+		[ $cd -eq 0 ] && break
+		echo -n "."
+		sleep 5
+	done
+	echo
+	if [ $cd -eq 0 ]
+	then
+		echo "ERROR: server failed to start, or admin credentials not working. Exiting."
+		exit 1
+	fi
+}
+
+start_remote_server()
+{
+	
+	echo -n "Starting remote server... "
+	if [ "$($ssh which supervisorctl 2>/dev/null)" != "" ]
+	then
+		$ssh supervisorctl start mariadb
+		echo
+		return
+	fi
+	if [ "$($ssh which systemctl 2>/dev/null)" != "" ]
+	then
+		$ssh systemctl start mariadb.service
+		echo
+		return
+	fi
+	if [ "$($ssh which service 2>/dev/null)" != "" ]
+	then
+		$ssh service mariadb start
+		echo
+		return
+	fi
+	echo "ERROR: unable to start MariaDB service on remote target. Exiting."
+	exit 1
 }
 
 do_restore()
@@ -1586,6 +1674,7 @@ do_restore()
 			else
 				logfile=/tmp/restore.log
 			fi
+			rm -f $logfile
 			[ "$tool" != "zsnapshot" ] && echo "Logfile: $logfile"
 			;;
 	esac
@@ -2083,7 +2172,7 @@ build_slave()
 		exit 1
 	fi
 	replication_credentials
-	if [ "$repl_creds" = "" ] 
+	if [ "$repl_user" = "" ] 
 	then
 		echo "Not a slave myself, cannot build another slave. Exiting."
 		exit 1
@@ -2174,8 +2263,10 @@ build_slave()
 			exit 1
 		fi
 		( 
+			echo "RESET MASTER;"
 			echo "SET GLOBAL gtid_slave_pos = '$gtid';"
 			echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass', MASTER_USE_GTID=slave_pos;"
+			[ "$repl_ssl" = "1" ] && echo "CHANGE MASTER TO MASTER_SSL=1, MASTER_SSL_CA='$repl_ssl_ca', MASTER_SSL_CERT='$repl_ssl_cert', MASTER_SSL_KEY='$repl_ssl_key';"
 			echo "START SLAVE;" 
 		) | ssh -q $1 "cat | mysql -ANr -u $user $sock_str $pass_str" || build_slave_failure $*
 		success=$(echo "show slave status\G" | ssh -q $1 mysql -Ar -u $user $sock_str $pass_str | grep 'Running:' | fgrep -c Yes)
@@ -2398,7 +2489,7 @@ perform_maria_restore()
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
-		tail -1 $logfile | fgrep -q "completed OK"
+			tail -1 $logfile | fgrep -q "completed OK"
 		status=$?
 		[ $status -ne 0 ] && break
 		current_position $id
@@ -2494,19 +2585,12 @@ ssh_setup()
 replication_credentials()
 {
 	get_repl_creds
-	if [ "$repl_creds" != "" ]
-	then
-		repl_host=$(echo $repl_creds | cut -d" " -f 1)
-		repl_port=$(echo $repl_creds | cut -d" " -f 4)
-		repl_user=$(echo $repl_creds | cut -d" " -f 2)
-		repl_pass=$(echo $repl_creds | cut -d" " -f 3)
-	fi
 }
 
 pit_xid()
 {
 	replication_credentials
-	[ "$repl_creds" = "" ] && return
+	[ "$repl_user" = "" ] && return
 	build_master_cmd
 	target_gtid=$(which_gtid)
 	[ $target_gtid -eq 0 ] && return
