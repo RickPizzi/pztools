@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.5"
+BM_VERSION="4.7.6"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1709,7 +1709,14 @@ do_restore()
 						[ "$failure_notify" != "" ] && echo "Restore test FAILED, please see /tmp/restore.log for details" | send_mail "$customer: restore test FAILED" $failure_notify
 					fi
 				else
-					[ $status -eq 0 ] && echo "Restore complete. Please don't forget to chown -R mysql:mysql $target."
+					if [ $status -eq 0 ]
+					then
+						echo "Restore complete."
+						[ "$repl_user" = "" ] && echo "Please don't forget to chown -R mysql:mysql $target."
+					else
+						echo "ERROR: restore failed! Please see $logfile for details."
+						exit 1
+					fi
 				fi
 			else
 				echo $status > /tmp/build_slave.status
