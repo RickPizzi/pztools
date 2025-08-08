@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.6"
+BM_VERSION="4.7.7"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -131,6 +131,7 @@ safe_defaults()
 
 setup_db()
 {
+	[ "$BACKUP_INVENTORY" != "" ] && DB=$BACKUP_INVENTORY
 	setup_sqlite_db
 }
 
