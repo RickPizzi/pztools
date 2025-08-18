@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.7"
+BM_VERSION="4.7.8"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -546,19 +546,11 @@ check_pit_availability()
 find_binlogs_backup_sp()
 {
         last_binlog=$(echo "select binlog_file from backup_history where backup_tool = 'binlogs' and status=0 order by end_time desc limit 1;" | dbquery $DB)
-        last_full=$(echo "select binlog_file from backup_history where uuid = '$1';" | dbquery $DB)
 	if [ "$last_binlog" = "" ]
 	then
-		binlog_start=$last_full
-		return
-	fi
-	last_binlog_time=$(echo "select end_time from backup_history where backup_tool = 'binlogs' and status=0 order by end_time desc limit 1;" | dbquery $DB)
-	last_full_time=$(echo "select end_time from backup_history where uuid = '$1';" | dbquery $DB)
-	if [ "$last_binlog_time" \> "$last_full_time" ]
-	then
-		binlog_start=$last_binlog
+        	binlog_start=$(echo "select binlog_file from backup_history where uuid = '$1';" | dbquery $DB)
 	else
-		binlog_start=$last_full
+		binlog_start=$last_binlog
 	fi
 }
 
