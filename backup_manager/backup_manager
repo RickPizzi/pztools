@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.8"
+BM_VERSION="4.7.9"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1666,6 +1666,7 @@ do_restore()
 				logfile=$target/restore.log
 			else
 				logfile=/tmp/restore.log
+				[ "$RESTORE_LOG" != "" ] && logfile=$RESTORE_LOG
 			fi
 			rm -f $logfile
 			[ "$tool" != "zsnapshot" ] && echo "Logfile: $logfile"
