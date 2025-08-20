@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.9"
+BM_VERSION="4.7.10"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -939,6 +939,12 @@ replication_info()
 	rc=$(echo "select uuid || binlog_file from backup_history where uuid = '$1';" | dbquery $DB)
 	[ "$rc" = "" ] && return
 	[ "$rc" = "$uuid" ] && echo "No replication info available for this backup" || echo "select 'Replication info for $1: position ' || binlog_file || ':' || binlog_position || ', GTID ' || ifnull(gtid_binlog_pos, 'N/A') from backup_history where uuid = '$1';" | dbquery $DB
+}
+
+backup_time()
+{
+	rc=$(echo "select binlog_last_ts from backup_history where uuid = '$1';" | dbquery $DB)
+	echo $rc
 }
 
 backup_type()
@@ -2818,11 +2824,6 @@ get_replication_info()
 	replication_info $1
 }
 
-get_backup_type()
-{
-	backup_type $1
-}
-
 safe_defaults
 if [ "$1" = "debug" ]
 then
@@ -2879,7 +2880,10 @@ case "$1" in
 		get_replication_info $2
 		;;
 	'backup-type') 
-		get_backup_type $2
+		backup_type $2
+		;;
+	'backup-time') 
+		backup_time $2
 		;;
 	'validate-pit') 
 		pit_dry_run $2 "$3"
