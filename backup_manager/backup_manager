@@ -2270,14 +2270,14 @@ build_slave()
 		config_lookup $1 socket || build_slave_failure $*
 		[ "$cfg" != "" ] && sock_str="-S$cfg" || sock_str=""
 		gtid=$(ssh -q $1 cat $2/xtrabackup_binlog_info | sed -re "s/^(.*)\s+(.*)\s+(.*)/\3/")
-		if [ "$gtid" = "" -a "$BM_OVERRIDE_GTID_POS" = "" -a "$BM_SKIP_GTID_POS" = "" ]
+		if [ "$gtid" = "" -a "$BM_OVERRIDE_GTID_POS" = "" -a "$BM_CLEAR_GTID_POS" = "" ]
 		then
 			echo "Unable to get GTID info for replication. Are GTIDs enabled on backup server?"
 			exit 1
 		fi
 		( 
 			echo "RESET MASTER;"
-			if [ "$BM_SKIP_GTID_POS" = "" ]
+			if [ "$BM_CLEAR_GTID_POS" = "" ]
 			then
 				if [ "$BM_OVERRIDE_GTID_POS" != "" ]
 				then
