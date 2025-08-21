@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.11"
+BM_VERSION="4.7.12"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -131,7 +131,7 @@ safe_defaults()
 
 setup_db()
 {
-	[ "$BACKUP_INVENTORY" != "" ] && DB=$BACKUP_INVENTORY
+	[ "$BM_BACKUP_INVENTORY" != "" ] && DB=$BM_BACKUP_INVENTORY
 	setup_sqlite_db
 }
 
@@ -1451,10 +1451,10 @@ do_backup()
 
 get_repl_creds()
 {
-	[ "$MASTER_INFO" != "" ] && mi="$MASTER_INFO" || mi=$(mysql_variable datadir 2>/dev/null)/master.info
+	[ "$BM_MASTER_INFO" != "" ] && mi="$BM_MASTER_INFO" || mi=$(mysql_variable datadir 2>/dev/null)/master.info
 	if [ "$mi" = "/master.info" ]
 	then
-		echo "WARNING: no replication info available (local server is down and MASTER_INFO env var is empty)"
+		echo "WARNING: no replication info available (local server is down and BM_MASTER_INFO env var is empty)"
 		return
 	fi
 	if [ ! -f $mi ]
@@ -2270,14 +2270,22 @@ build_slave()
 		config_lookup $1 socket || build_slave_failure $*
 		[ "$cfg" != "" ] && sock_str="-S$cfg" || sock_str=""
 		gtid=$(ssh -q $1 cat $2/xtrabackup_binlog_info | sed -re "s/^(.*)\s+(.*)\s+(.*)/\3/")
-		if [ "$gtid" = "" ]
+		if [ "$gtid" = "" -a "$BM_OVERRIDE_GTID_POS" = "" -a "$BM_SKIP_GTID_POS" = "" ]
 		then
 			echo "Unable to get GTID info for replication. Are GTIDs enabled on backup server?"
 			exit 1
 		fi
 		( 
 			echo "RESET MASTER;"
-			echo "SET GLOBAL gtid_slave_pos = '$gtid';"
+			if [ "$BM_SKIP_GTID_POS" = "" ]
+			then
+				if [ "$BM_OVERRIDE_GTID_POS" != "" ]
+				then
+					echo "SET GLOBAL gtid_slave_pos = '$BM_OVERRIDE_GTID_POS';"
+				else
+					echo "SET GLOBAL gtid_slave_pos = '$gtid';"
+				fi
+			fi
 			echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass', MASTER_USE_GTID=slave_pos;"
 			[ "$repl_ssl" = "1" ] && echo "CHANGE MASTER TO MASTER_SSL=1, MASTER_SSL_CA='$repl_ssl_ca', MASTER_SSL_CERT='$repl_ssl_cert', MASTER_SSL_KEY='$repl_ssl_key';"
 			echo "START SLAVE;" 
