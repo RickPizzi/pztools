@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.12"
+BM_VERSION="4.7.13"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1524,6 +1524,7 @@ do_remote_restore()
 		echo "That didn't work."
 		echo "Please make sure you entered the correct information, and ssh keypair authentication is set up properly."	
 		echo
+		[ ! -t 0 ] && exit 1
 	done
 	if [ "$BM_BACKUP_PATH" = "" ]
 	then    
