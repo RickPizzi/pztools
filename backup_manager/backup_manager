@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.13"
+BM_VERSION="4.7.14"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2660,7 +2660,7 @@ check_slave_status()
 			[ $hb_delay -ge $hb_stale_secs ]
 		fi
 	else
-		echo "show slave status\G" | mysql -Ar -u $user $sock_str $pass_str | grep -P "Slave_(.*)_Running:" | fgrep -q No
+		echo "show slave status\G" | mysql -Ar -u $user $sock_str $pass_str | grep -P "Slave_(.*)_Running:" | egrep -q "No|Connecting"
 	fi
 	if [ $? -eq 0 ]
 	then
