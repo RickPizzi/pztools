@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.14"
+BM_VERSION="4.7.15"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1614,6 +1614,22 @@ start_remote_server()
 	exit 1
 }
 
+compression_encryption_override()
+{
+	uncompressor=$(echo "select uncompressor from backup_history where uuid = '$1';" | dbquery $DB)
+	if [ "$(which $uncompressor 2>/dev/null)" = "" ]
+	then
+		echo "ERROR: cannot exec '$uncompressor', is the program installed on this machine?"
+		exit 1
+	fi
+	unencryptor=$(echo "select unencryptor from backup_history where uuid = '$1';" | dbquery $DB)
+	if [ "$(which $unencryptor 2>/dev/null)" = "" ]
+	then
+		echo "ERROR: cannot exec '$unencryptor', is the program installed on this machine?"
+		exit 1
+	fi
+}
+
 do_restore()
 {
 	check_root restore
@@ -1686,6 +1702,7 @@ do_restore()
 			;;
 	esac
 	dim_prepare_memory
+	compression_encryption_override $1
 	case "$tool" in
 		'mariabackup')
 			perform_maria_restore;;
