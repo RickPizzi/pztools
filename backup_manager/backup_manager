@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.7.16"
+BM_VERSION="4.8.1"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -99,6 +99,7 @@ safe_defaults()
 	encryptor="cat"
 	uncompressor="cat"
 	unencryptor="cat"
+	reader="cat \$path"
 	purge_incomplete=0
 	expire_days=0
 	smart_purge=0
@@ -768,6 +769,11 @@ purge_backups()
 
 check_home_config()
 {
+	if [ "$BM_CONFIG_FILE" != "" ]
+	then
+		CONFIGFILE=$BM_CONFIG_FILE
+		return
+	fi
 	[ $(id -u) -eq 0 ] && return
 	[ -f $HOME/$CONFIGNAME ] && CONFIGFILE=$HOME/$CONFIGNAME
 }
@@ -976,6 +982,7 @@ parse_config()
 	grep -q "^uncompressor" $CONFIGFILE && uncompressor=$(grep "^uncompressor" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^encryptor" $CONFIGFILE && encryptor=$(grep "^encryptor" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^unencryptor" $CONFIGFILE && unencryptor=$(grep "^unencryptor" $CONFIGFILE | cut -d"=" -f2)
+	grep -q "^downloader" $CONFIGFILE && reader=$(grep "^downloader" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^purge_incomplete_backups" $CONFIGFILE && purge_incomplete=$(grep "^purge_incomplete_backups" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^expire_days" $CONFIGFILE && expire_days=$(grep "^expire_days" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^purge_days" $CONFIGFILE && expire_days=$(grep "^purge_days" $CONFIGFILE | cut -d"=" -f2)
@@ -1044,6 +1051,7 @@ parse_config()
 			exit 1
 		fi
 	fi
+	[ "$BM_DOWNLOADER" != "" ] && reader=$BM_DOWNLOADER
 
 	lockfile=/tmp/backup_manager.lock
 	binlog_lockfile=/tmp/backup_manager_binlogs.lock
@@ -1108,7 +1116,7 @@ prepare_target()
 	backup_id=$(date "+%s$$" | md5sum | cut -d" " -f 1)
 	case "$level" in
 		0) fn=full_$(date +%H:%M);;
-		1) fn=incr_$(date +%H:%M);;
+			1) fn=incr_$(date +%H:%M);;
 		2) fn=${dumplist}_$(date +%H:%M);;
 		3) fn=binlogs_$(date +%H:%M);;
 	esac
@@ -1766,7 +1774,7 @@ extract_binlog_piece()
 		kill $instance 2>/dev/null
 		return 1
 	fi
-	cat $path | $unencryptor 2>/dev/null | $uncompressor | tar xf -
+	eval $reader | $unencryptor 2>/dev/null | $uncompressor | tar xf -
 	first_b=$(basename $(ls -1 $bxfolder/* | head -1))
 	last_b=$(basename $(ls -1 $bxfolder/* | tail -1))
 	if [ "$requested_binlog_file" != "" ]
@@ -1791,11 +1799,9 @@ extract_binlog_piece()
 		then
 			if [ $initial_bf_done -eq 1 ]
 			then
-				#$mysqlbinlog --no-defaults --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 				cat $bxfolder/$bf | $local_remote $mysqlbinlog --no-defaults --stop-datetime="'$requested_binlog_ts'" - | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 			else
 				initial_bf_done=1
-				#$mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 				cat $bxfolder/$bf | $local_remote $mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-datetime="'$requested_binlog_ts'" - | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 			fi
 			if [ $? -ne 0 ]
@@ -1811,10 +1817,8 @@ extract_binlog_piece()
 			last_file=$bf
 			if [ $initial_bf_done -eq 1 ]
 			then
-				#$mysqlbinlog --no-defaults --stop-position=$requested_binlog_position --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 				cat $bxfolder/$bf | $local_remote $mysqlbinlog --no-defaults --stop-position=$requested_binlog_position --stop-datetime="'$requested_binlog_ts'" - | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 			else
-				#$mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-position=$requested_binlog_position --stop-datetime="$requested_binlog_ts" $bxfolder/$bf | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 				cat $bxfolder/$bf | $local_remote $mysqlbinlog --no-defaults --start-position=$bf_start_pos --stop-position=$requested_binlog_position --stop-datetime="'$requested_binlog_ts'" - | $ssh mysql -A -S /tmp/backup_manager.sock 2>$aux_log
 			fi
 			if [ $? -ne 0 ]
@@ -2157,7 +2161,7 @@ perform_smartdump_restore()
 	[ "$password" != "" ] && pass_str="--password $password"
 	[ "$socket" != "" ] && sock_str="--socket $socket"
 	[ "$port" != "" ] && port_str="--port $port"
-	cat $path | $unencryptor 2>/dev/null | $uncompressor | smartdump --stream --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str
+	eval $reader | $unencryptor 2>/dev/null | $uncompressor | smartdump --stream --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str
 	status=$?
 }
 
@@ -2171,7 +2175,7 @@ perform_mysqldump_restore()
 	path=$(echo "select bulocation from backup_history where uuid = '$uuid';" | dbquery $DB)
 	key=$(echo "select cryptkey from backup_history where uuid = '$uuid';" | dbquery $DB)
 	[ "$key" != "" ] && export enc_key="$key"
-	cat $path | $unencryptor 2>/dev/null | $uncompressor
+	eval $reader | $unencryptor 2>/dev/null | $uncompressor
 	status=$?
 }
 
@@ -2303,11 +2307,14 @@ build_slave()
 				else
 					echo "SET GLOBAL gtid_slave_pos = '$gtid';"
 				fi
+				echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass', MASTER_USE_GTID=slave_pos;"
+			else
+				echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass';"
 			fi
-			echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass', MASTER_USE_GTID=slave_pos;"
 			[ "$repl_ssl" = "1" ] && echo "CHANGE MASTER TO MASTER_SSL=1, MASTER_SSL_CA='$repl_ssl_ca', MASTER_SSL_CERT='$repl_ssl_cert', MASTER_SSL_KEY='$repl_ssl_key';"
 			echo "START SLAVE;" 
 		) | ssh -q $1 "cat | mysql -ANr -u $user $sock_str $pass_str" || build_slave_failure $*
+		sleep 10
 		success=$(echo "show slave status\G" | ssh -q $1 mysql -Ar -u $user $sock_str $pass_str | grep 'Running:' | fgrep -c Yes)
 		if [ "$success" = "2" ]
 		then
@@ -2344,10 +2351,10 @@ perform_xtra_restore()
 	then
 		mkdir -p $target/full
 		echo -n "extracting full backup $uuid... "
-		echo "--> cat $path | $unencryptor | $uncompressor | xbstream -p $parallelism -x -v -C $target/full" >> $logfile
-		cat $path | $unencryptor 2>/dev/null | $uncompressor | xbstream -p $parallelism -x -v -C $target/full 2>> $logfile
+		echo "--> eval $reader | $unencryptor | $uncompressor | xbstream -p $parallelism -x -v -C $target/full" >> $logfile
+		eval $reader | $unencryptor 2>/dev/null | $uncompressor | xbstream -p $parallelism -x -v -C $target/full 2>> $logfile
 	else
-		cat $path | $unencryptor 2>/dev/null | $uncompressor 2>> $logfile
+		eval $reader | $unencryptor 2>/dev/null | $uncompressor 2>> $logfile
 		status=$?
 		return
 	fi
@@ -2373,8 +2380,8 @@ perform_xtra_restore()
 		incdir=$(basename $path)
 		echo -n "extracting incremental backup $id... "
 		mkdir -p $target/$incdir
-		echo "--> cat $path | $unencryptor | $uncompressor | xbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
-		cat $path | $unencryptor 2>/dev/null | $uncompressor | xbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
+		echo "--> eval $reader | $unencryptor | $uncompressor | xbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
+		eval $reader | $unencryptor 2>/dev/null | $uncompressor | xbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
@@ -2421,7 +2428,7 @@ perform_zsnapshot_restore()
 	key=$(echo "select cryptkey from backup_history where uuid = '$uuid';" | dbquery $DB)
 	[ "$key" != "" ] && export enc_key="$key"
 	echo -n "restoring full snapshot $uuid... "
-	cat $path | $unencryptor 2>/dev/null | $uncompressor | zfs recv -u ${target:1} 2>$aux_log
+	eval $reader | $unencryptor 2>/dev/null | $uncompressor | zfs recv -u ${target:1} 2>$aux_log
 	if [ $? -ne 0 ]
 	then
 		echo
@@ -2454,7 +2461,7 @@ perform_zsnapshot_restore()
 		key=$(echo "select cryptkey from backup_history where uuid = '$id';" | dbquery $DB)
 		[ "$key" != "" ] && export enc_key="$key"
 		echo -n "restoring incremental snapshot $id... "
-		cat $path | $unencryptor 2>/dev/null | $uncompressor | zfs recv -u ${target:1} 2>$aux_log
+		eval $reader | $unencryptor 2>/dev/null | $uncompressor | zfs recv -u ${target:1} 2>$aux_log
 		if [ $? -ne 0 ]
 		then
 			echo
@@ -2484,10 +2491,10 @@ perform_maria_restore()
 	then
 		echo -n "extracting full backup $uuid... "
 		$ssh mkdir -p $target/full
-		echo "--> cat $path | $unencryptor | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/full" >> $logfile
-		cat $path | $unencryptor 2>/dev/null | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/full 2>> $logfile
+		echo "--> eval $reader | $unencryptor | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/full" >> $logfile
+		eval $reader | $unencryptor 2>/dev/null | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/full 2>> $logfile
 	else
-		cat $path | $unencryptor 2>/dev/null | $uncompressor 2>> $logfile
+		eval $reader | $unencryptor 2>/dev/null | $uncompressor 2>> $logfile
 		status=$?
 		return
 	fi
@@ -2517,8 +2524,8 @@ perform_maria_restore()
 		echo -n "extracting incremental backup $id... "
 		$ssh mkdir -p $target/$incdir
 		rm -f /tmp/xtrabackup*
-		echo "--> cat $path | $unencryptor | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
-		cat $path | $unencryptor 2>/dev/null | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
+		echo "--> eval $reader | $unencryptor | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
+		eval $reader | $unencryptor 2>/dev/null | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
@@ -2837,7 +2844,6 @@ build_binlog_list()
 
 position_from_binlog()
 {
-	#mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER $1 | fgrep -v Warning | fgrep -C10 -m1 "Start: binlog" > $aux_log
 	cat $1 | $ssh $mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER - | fgrep -v Warning | fgrep -C10 -m1 "Start: binlog" > $aux_log
 	lb_ts=$(grep "GTID " $aux_log | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)\s+([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/ 0\2/")
 	[ "$lb_ts" = "" ] && lb_ts=$(grep "created " $aux_log | sed -re "s/^#([0-9][0-9])([0-9][0-9])([0-9][0-9])(\s*)([0-9]*):([0-9]*):([0-9]*)\s(.*)$/20\1-\2-\3 \5:\6:\7/" -e "s/( )([0-9]:)/ 0\2/")
