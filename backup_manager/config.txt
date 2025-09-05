@@ -53,6 +53,20 @@ free_space_percentage=20
 #encryptor=openssl enc -aes-256-cbc -pass env:enc_key
 #unencryptor=openssl enc -d -aes-256-cbc -pass env:enc_key
 #
+#
+# downloader options - used when restoring
+# can be used to stream backup pieces from a cloud bucket (S3, GCP..)
+#
+# NOTE: the $path variable represents the backup piece path and
+# will be auto substituted, so should not be changed here, 
+# use the environment variable to override that if need be
+#
+# default is to read from local filesystem with cat
+#downloader=cat $path
+#
+# example to use an S3 bucket 
+#downloader=aws s3 cp $BACKUP_BUCKET/$path -
+#
 ########################################################################
 #
 # PURGE OPTIONS
