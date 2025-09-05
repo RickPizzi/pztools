@@ -10,6 +10,7 @@ Highlights:
 - configurable encryption and compression methods
 - browsable backup inventory
 - can restore locally or to remote server via ssh
+- can restore from local server or from cloud buckets (S3, GCP...)
 - automatic and effortless restore to specific point-in-time
 - automatic rebuild of replicas from last backup, including replication
 - automatic restore test
