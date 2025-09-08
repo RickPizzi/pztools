@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.1"
+BM_VERSION="4.8.2"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -100,6 +100,7 @@ safe_defaults()
 	uncompressor="cat"
 	unencryptor="cat"
 	reader="cat \$path"
+	default_reader="$reader"
 	purge_incomplete=0
 	expire_days=0
 	smart_purge=0
@@ -282,7 +283,7 @@ check_free_space()
 		echo $msg
 		[ "$failure_notify" != "" ] && echo $msg | send_mail "$customer: backup FAILED" $failure_notify
 		status=1; fire_webhook
-		exit 1
+			exit 1
 	fi
 	if [ $level -eq 0 -a $disk_space_p_avail -lt $min_disk_pfree ]
 	then
@@ -384,7 +385,7 @@ apply_binlogs()
 	mariadb_instance start
 	if [ $? -ne 0 ]
 	then
-		echo "ERROR: unable to start MariaDB auxiliary instance. More info: $target/backup_manager_mysqld.err"
+		echo "ERROR: unable to start MariaDB auxiliary instance. More info: /tmp/backup_manager_mysqld.err"
 		echo "Aborting restore."
 		return 1
 	fi
@@ -1057,6 +1058,7 @@ parse_config()
 		fi
 	fi
 	[ "$BM_DOWNLOADER" != "" ] && reader=$BM_DOWNLOADER
+	[ "$BM_SERVER_PATH" != "" ] && server_path=$BM_SERVER_PATH
 
 	lockfile=/tmp/backup_manager.lock
 	binlog_lockfile=/tmp/backup_manager_binlogs.lock
@@ -1773,10 +1775,10 @@ extract_binlog_piece()
 	[ "$backup_path" != "" ] && path=$backup_path/$(echo $path | sed -re "s/^(.*)\/([0-9-]*)\/(.*)\/(.*)$/\2\/\3\/\4/")
 	key=$(echo "select cryptkey from backup_history where uuid = '$1';" | dbquery $DB)
 	[ "$key" != "" ] && export enc_key="$key"
-	if [ ! -f $path ]
+	if [ "$reader" = "$default_reader" -a ! -f $path ]
 	then
 		echo "ERROR: binlogs backup archive not found. Aborting restore."
-		kill $instance 2>/dev/null
+		mariadb_instance stop
 		return 1
 	fi
 	eval $reader | $unencryptor 2>/dev/null | $uncompressor | tar xf -
@@ -1790,7 +1792,7 @@ extract_binlog_piece()
 		if [ "$last_b" = "" ]
  		then
  			echo "ERROR: required binlog $bf_start_file not available. Aborting restore."
- 			kill $instance 2>/dev/null
+			mariadb_instance stop
  			return 1
  		fi
 	fi
@@ -1815,7 +1817,7 @@ extract_binlog_piece()
 				echo "ERROR: apply of binary log $bf failed!"
 				cat $aux_log
 				echo "Aborting restore."
-				kill $instance 2>/dev/null
+				mariadb_instance stop
 				return 1
 			fi
 		else
@@ -1832,7 +1834,7 @@ extract_binlog_piece()
 				echo "ERROR: apply of binary log $bf failed!"
 				cat $aux_log
 				echo "Aborting restore."
-				kill $instance 2>/dev/null
+				mariadb_instance stop
 				return 1
 			fi
 			break
@@ -2561,6 +2563,7 @@ perform_maria_restore()
 	if [ $status -eq 0 -a $point_in_time -eq 1 ]
 	then
 		[ "$backup_path" = "" ] && bxfolder=$target/.backupmanager || bxfolder=$backup_path/.backupmanager
+		[ "$BM_BINLOG_PATH" != "" ] && bxfolder=$BM_BINLOG_PATH/.backupmanager
 		apply_binlogs || exit 1
 	        echo "Done applying binary logs."
 	fi
@@ -2787,7 +2790,7 @@ mariadb_instance()
 			echo -n "starting MariaDB auxiliary instance on $target... "
 			$local_remote "echo 'server_id=987654321' >> $target/backup-my.cnf"
 			$local_remote "echo 'lower_case_table_names=$case_insens' >> $target/backup-my.cnf"
-			$ssh $server_path --defaults-file=$target/backup-my.cnf  --innodb_file_per_table  --skip-grant-tables --basedir=/usr --datadir=$target --plugin-dir=/usr/lib64/mysql/plugin --user=root --log-error=$target/backup_manager_mysqld.err $limit_str --pid-file=$target/mysql.pid --socket=/tmp/backup_manager.sock --port=65432 2>> $target/backup_manager_mysqld.err &
+			$ssh $server_path --defaults-file=$target/backup-my.cnf  --innodb_file_per_table  --skip-grant-tables --basedir=/usr --datadir=$target --plugin-dir=/usr/lib64/mysql/plugin --user=root --log-error=$target/backup_manager_mysqld.err $limit_str --pid-file=$target/mysql.pid --socket=/tmp/backup_manager.sock --port=65432 2>> /tmp/backup_manager_mysqld.err &
 			sleep 10
 			instance=$($ssh cat $target/mysql.pid 2>/dev/null)
 			[ "$instance" = "" ] && return 1
