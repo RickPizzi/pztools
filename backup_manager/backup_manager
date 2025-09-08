@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.2"
+BM_VERSION="4.8.3"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1574,6 +1574,7 @@ do_remote_restore()
 	if [ "$repl_user" != "" ] 
 	then
 		$ssh chown -R mysql:mysql $2
+		find_remote_mysql
 		start_remote_server
 		wait_for_remote_server
 		user=$admin_user
@@ -1583,13 +1584,24 @@ do_remote_restore()
 	fi
 }
 
+find_remote_mysql()
+{
+	if [ "$local_remote" != "eval" ]
+	then
+		mysqlcli=$($ssh "find / -xdev -type f -a -perm /001 -a \( -name mysql -o -name mariadb \)" | head -1)
+	else
+		mysqlcli=$(find / -xdev -type f -a -perm /001 -a \( -name mysql -o -name mariadb \) | head -1)
+	fi
+	[ "$mysqlcli" = "" ] && mysqlcli="mysql"
+}
+
 wait_for_remote_server()
 {
 	cd=10
 	echo -n "Waiting for remote service to start..."
 	while true
 	do
-        	echo "select 1" | $ssh mysql -u $admin_user -p$admin_pass > /dev/null 2>&1 && break
+        	echo "select 1" | $ssh $mysqlcli -u $admin_user -p$admin_pass > /dev/null 2>&1 && break
 		cd=$((cd-1))
 		[ $cd -eq 0 ] && break
 		echo -n "."
