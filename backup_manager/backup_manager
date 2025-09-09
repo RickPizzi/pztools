@@ -2571,8 +2571,10 @@ perform_maria_restore()
 	key=$(echo "select cryptkey from backup_history where uuid = '$uuid';" | dbquery $DB)
 	[ "$key" != "" ] && export enc_key="$key"
 	rm -f /tmp/xtrabackup*
-	mariabackup=$(find_util mariabackup)
-	mbstream=$(find_util mbstream)
+	find_util mariabackup
+	mariabackup=$util
+	find_util mbstream
+	mbstream=$util
 	if [ "$target" != "-" ]
 	then
 		echo -n "extracting full backup $uuid... "
@@ -2650,21 +2652,17 @@ perform_maria_restore()
 
 perform_mariaunpacked_restore()
 {
-	mariabackup=$(which mariabackup 2>/dev/null)
-	if [ "$mariabackup" = "" ]
-	then
-		echo "ERROR: Please install $tool first."
-		clean_exit 1
-	fi
-	rsync=$(which rsync 2>/dev/null)
-	if [ "$rsync" = "" ]
+	find_util rsync
+	if [ "$util" = "" ]
 	then
 		echo "ERROR: Please install rsync first."
 		clean_exit 1
+	else
+		rsync=$util
 	fi
 	path=$(echo "select bulocation from backup_history where uuid = '$uuid';" | dbquery $DB)
 	key=$(echo "select cryptkey from backup_history where uuid = '$uuid';" | dbquery $DB)
-	rsync -a $path/* $target/
+	$rsync -a $path/* $target/
 	if [ $? -ne 0 ]
 	then
 		echo "ERROR:copying backup to $target failed."
