@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.4"
+BM_VERSION="4.8.5"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2028,12 +2028,18 @@ perform_maria_backup()
 	find_util mariabackup
 	if [ "$util" = "" ]
 	then
-		echo "ERROR: Please install $tool first."
+		find_util mariadb-backup
+		if [ "$util" = "" ]
+		then
+			echo "ERROR: Please install $tool first."
+		else
+			mariabackup=$util
+		fi
 		clean_exit 1
 	else
 		mariabackup=$util
-		echo "Performing backup using $tool."
 	fi
+	echo "Performing backup using $tool."
 	find_util mysqlbinlog
 	if [ "$util" = "" ]
 	then
@@ -2079,12 +2085,18 @@ perform_mariaunpacked_backup()
 	find_util mariabackup
 	if [ "$util" = "" ]
 	then
-		echo "ERROR: Please install $tool first."
+		find_util mariadb-backup
+		if [ "$util" = "" ]
+		then
+			echo "ERROR: Please install $tool first."
+		else
+			mariabackup=$util
+		fi
 		clean_exit 1
 	else
 		mariabackup=$util
-		echo "Performing backup using $tool."
 	fi
+	echo "Performing backup using $tool."
 	find_util mysqlbinlog
 	if [ "$util" = "" ]
 	then
@@ -2578,6 +2590,10 @@ perform_maria_restore()
 	[ "$key" != "" ] && export enc_key="$key"
 	rm -f /tmp/xtrabackup*
 	find_util mariabackup
+	if [ "$util" = "" ]
+	then
+		find_util mariadb-backup
+	fi
 	mariabackup=$util
 	find_util mbstream
 	mbstream=$util
