@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.3"
+BM_VERSION="4.8.4"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -346,7 +346,6 @@ scan_binlog_archive()
 	echo -n "scanning binlog archive.."
 	for bf in $(ls $bxfolder)
 	do
-	#t=$(mysqlbinlog --no-defaults $bf | fgrep -m 1 "Start: binlog" | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)\s+([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/ 0\2/")
 	t=$(cat $bf | $ssh $mysqlbinlog --no-defaults - | fgrep -m 1 "Start: binlog" | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)\s+([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/ 0\2/")
 		if [ "$(echo "select '$t' > '$requested_binlog_ts';" | dbquery $DB)" = "1" ]
 		then 
@@ -449,12 +448,6 @@ validate_point_in_time()
 		unset IFS
 		echo "$requested_binlog_file" | grep -qE "^[-0-9a-z\.]+$"  || pit_input_error "$1"
 		echo "$requested_binlog_position" | grep -qE "^[0-9]+$" || pit_input_error "$1"
-	fi
-	mysqlbinlog=$($ssh which mysqlbinlog 2>/dev/null)
-	if [ "$mysqlbinlog" = "" ]
-	then
-		echo "ERROR: mysqlbinlog program not installed, cannot restore to point-in-time. Exiting."
-		exit 1
 	fi
 	check_pit_availability
 	if [ "$target_binlog_backup_id" = "" ]
@@ -938,7 +931,6 @@ validate_table_name()
 		exit 1
 	fi
 }
-# end
 
 inventory()
 {
@@ -1257,11 +1249,13 @@ perform_backup()
 
 perform_binlogs_backup()
 {
-	mysqlbinlog=$(which mysqlbinlog 2>/dev/null)
-	if [ "$mysqlbinlog" = "" ]
+	find_util mysqlbinlog
+	if [ "$util" = "" ]
 	then
 		echo "ERROR: mysqlbinlog program not installed, but needed for binlogs backups."
 		clean_exit 1
+	else
+		mysqlbinlog=$util
 	fi
 	if [ "$(mysql_variable log_bin)" != "1" ]
 	then
@@ -1301,7 +1295,7 @@ perform_binlogs_backup()
 save_binlog_info()
 {
 	[ $status -ne 0 ] && return
-	binlog_ts=$(mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER --stop-position $binlog_pos $(dirname $(mysql_variable log_bin_basename))/$binlog_file | fgrep "end_log_pos " | tail -1 | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+) ([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/0\2/")
+	binlog_ts=$($mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER --stop-position $binlog_pos $(dirname $(mysql_variable log_bin_basename))/$binlog_file | fgrep "end_log_pos " | tail -1 | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+) ([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/0\2/")
 	case "$tool" in
 		'mariabackup'|'mariaunpacked'|'zsnapshot')
 			gtid_binlog_pos=$(echo "select BINLOG_GTID_POS('$binlog_file',$binlog_pos)" | mysql -ANr -u $user $sock_str $pass_str)
@@ -1657,6 +1651,13 @@ compression_encryption_override()
 	fi
 }
 
+find_util()
+{
+	util=$($ssh which $1 2>/dev/null)
+	[ "$util" != "" ] && return
+	util=$($ssh find / -xdev -type f -a -perm /001 -a -name $1 | head -1)
+}
+
 do_restore()
 {
 	check_root restore
@@ -1689,10 +1690,29 @@ do_restore()
 		'zsnapshot')			toolcheck="zfs";;
 		*)				toolcheck=$tool
 	esac
-	if [ "$($ssh which $toolcheck 2>/dev/null)" = "" ]
+	find_util $toolcheck
+	if [ "$util" = "" ]
 	then
-		echo "ERROR: tool $tool needed to restore '$1' is not installed. Please install it."
+		echo "ERROR: tool $toolcheck needed to restore '$1' is not installed. Please install it."
 		exit 1
+	fi
+	if [ "$tool" = "mariabackup" ]
+	then
+		find_util mbstream
+		if [ "$util" = "" ]
+		then
+			echo "ERROR: tool mbstream, needed to restore '$1', is not installed. Please install it."
+			exit 1
+		fi
+	fi
+	if [ "$tool" = "xtrabackup" ]
+	then
+		find_util xbstream
+		if [ "$util" = "" ]
+		then
+			echo "ERROR: tool xbstream, needed to restore '$1', is not installed. Please install it."
+			exit 1
+		fi
 	fi
 	case "$tool" in
 		'mariabackup'|'xtrabackup'|'mariaunpacked'|'zsnapshot')
@@ -1714,6 +1734,25 @@ do_restore()
 				fi
 			fi
 			[ "$3" != "" ] && validate_point_in_time "$3" $4
+			if [ $point_in_time -eq 1 ]
+			then
+				find_util mysql
+				if [ "$util" = "" ]
+				then
+					find_util mariadb
+					if [ "$util" = "" ]
+					then
+						echo "ERROR: mysql CLI, needed for point-in-time restore, is not installed. Please install it."
+						exit 1
+					fi
+				fi
+				find_util mysqlbinlog
+				if [ "$util" = "" ]
+				then
+					echo "ERROR: tool mysqlbinlog, needed for point-in-time restore, is not installed. Please install it."
+					exit 1
+				fi
+			fi
 			[ "$2" != "-" ] && echo -n "Restoring backup '$uuid' using $tool to $target"
 			[ "$2" != "-" ] && echo
 			if [ "$target" != "-" -a "$local_remote" = "eval" ]
@@ -1920,6 +1959,14 @@ zfs_preflight_checks()
 
 perform_zsnapshot_backup()
 {
+	find_util mysqlbinlog
+	if [ "$util" = "" ]
+	then
+		echo "ERROR: cannot find mysqlbinlog tool, please make sure it is installed."
+		clean_exit 1
+	else
+		mysqlbinlog=$util
+	fi
 	echo "Performing backup using ZFS snapshot."
 	snap_t=$(stat -Lc %m $(mysql_variable datadir))
 	zfs_preflight_checks
@@ -1972,13 +2019,22 @@ perform_zsnapshot_backup()
 
 perform_maria_backup()
 {
-	mariabackup=$(which mariabackup 2>/dev/null)
-	if [ "$mariabackup" = "" ]
+	find_util mariabackup
+	if [ "$util" = "" ]
 	then
 		echo "ERROR: Please install $tool first."
 		clean_exit 1
 	else
+		mariabackup=$util
 		echo "Performing backup using $tool."
+	fi
+	find_util mysqlbinlog
+	if [ "$util" = "" ]
+	then
+		echo "ERROR: cannot find mysqlbinlog tool, please make sure it is installed."
+		clean_exit 1
+	else
+		mysqlbinlog=$util
 	fi
 	mkdir -p $target/checkpoints/mariabackup
 	open_files_limit
@@ -1988,13 +2044,13 @@ perform_maria_backup()
 	[ $kill_query_time -gt 0 ] && kill_str="--kill-long-queries-timeout=$kill_query_time --kill-long-query-type=SELECT"
 	case $level in
 		0)
-			mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			$mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
 		1)
 			cp $target/checkpoints/mariabackup/xtrabackup_checkpoints /tmp 2>/dev/null
-			mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			$mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
@@ -2014,13 +2070,22 @@ open_files_limit()
 
 perform_mariaunpacked_backup()
 {
-	mariabackup=$(which mariabackup 2>/dev/null)
-	if [ "$mariabackup" = "" ]
+	find_util mariabackup
+	if [ "$util" = "" ]
 	then
 		echo "ERROR: Please install $tool first."
 		clean_exit 1
 	else
+		mariabackup=$util
 		echo "Performing backup using $tool."
+	fi
+	find_util mysqlbinlog
+	if [ "$util" = "" ]
+	then
+		echo "ERROR: cannot find mysqlbinlog tool, please make sure it is installed."
+		clean_exit 1
+	else
+		mysqlbinlog=$util
 	fi
 	mkdir -p $target/checkpoints/mariaunpacked
 	[ "$password" != "" ] && pass_str="--password=$password"
@@ -2029,7 +2094,7 @@ perform_mariaunpacked_backup()
 	[ $kill_query_time -gt 0 ] && kill_str="--kill-long-queries-timeout=$kill_query_time --kill-long-query-type=SELECT"
 	case $level in
 		0)
-			mariabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile &
+			$mariabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile &
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariaunpacked 2>/dev/null
 			;;
@@ -2040,7 +2105,7 @@ perform_mariaunpacked_backup()
         [ $status -ne 0 ] && return
 	open_files_limit
         dim_prepare_memory
-        mariabackup --prepare $limit_str --export --use-memory=${prepare_memory}K --target-dir=$tt >> $logfile 2>&1
+        $mariabackup --prepare $limit_str --export --use-memory=${prepare_memory}K --target-dir=$tt >> $logfile 2>&1
         status=$?
         [ $status -ne 0 ] && return
         tail -1 $logfile | fgrep -q "completed OK"
@@ -2506,12 +2571,14 @@ perform_maria_restore()
 	key=$(echo "select cryptkey from backup_history where uuid = '$uuid';" | dbquery $DB)
 	[ "$key" != "" ] && export enc_key="$key"
 	rm -f /tmp/xtrabackup*
+	mariabackup=$(find_util mariabackup)
+	mbstream=$(find_util mbstream)
 	if [ "$target" != "-" ]
 	then
 		echo -n "extracting full backup $uuid... "
 		$ssh mkdir -p $target/full
-		echo "--> eval $reader | $unencryptor | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/full" >> $logfile
-		eval $reader | $unencryptor 2>/dev/null | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/full 2>> $logfile
+		echo "--> eval $reader | $unencryptor | $uncompressor | $ssh $mbstream -p $parallelism -x -v -C $target/full" >> $logfile
+		eval $reader | $unencryptor 2>/dev/null | $uncompressor | $ssh $mbstream -p $parallelism -x -v -C $target/full 2>> $logfile
 	else
 		eval $reader | $unencryptor 2>/dev/null | $uncompressor 2>> $logfile
 		status=$?
@@ -2522,8 +2589,8 @@ perform_maria_restore()
 	[ $status -ne 0 ] && return
 	open_files_limit
 	echo -n "applying redo logs for $uuid... "
-	echo "--> $ssh mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile
-	$ssh mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
+	echo "--> $ssh $mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile
+	$ssh $mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
 	status=$?
 	echo
 	[ $status -ne 0 ] && return
@@ -2543,18 +2610,18 @@ perform_maria_restore()
 		echo -n "extracting incremental backup $id... "
 		$ssh mkdir -p $target/$incdir
 		rm -f /tmp/xtrabackup*
-		echo "--> eval $reader | $unencryptor | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
-		eval $reader | $unencryptor 2>/dev/null | $uncompressor | $ssh mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
+		echo "--> eval $reader | $unencryptor | $uncompressor | $ssh $mbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
+		eval $reader | $unencryptor 2>/dev/null | $uncompressor | $ssh $mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
 		echo -n "applying redo logs for $id... "
-		echo "--> $ssh mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir" >> $logfile
-		$ssh mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir >> $logfile 2>&1
+		echo "--> $ssh $mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir" >> $logfile
+		$ssh $mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir >> $logfile 2>&1
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
-			tail -1 $logfile | fgrep -q "completed OK"
+		tail -1 $logfile | fgrep -q "completed OK"
 		status=$?
 		[ $status -ne 0 ] && break
 		current_position $id
@@ -2563,8 +2630,8 @@ perform_maria_restore()
 	done
 	[ $status -ne 0 ] && return
 	echo -n "Finalizing backup... "
-	echo "--> $ssh mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile 
-	$ssh mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
+	echo "--> $ssh $mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile 
+	$ssh $mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
 	status=$?
 	echo
 	[ $status -ne 0 ] && return
@@ -2815,8 +2882,6 @@ mariadb_instance()
 			;;
 	esac
 }
-
-# end
 
 dim_prepare_memory()
 {
