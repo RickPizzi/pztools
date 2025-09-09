@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.5"
+BM_VERSION="4.8.6"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1693,7 +1693,16 @@ do_restore()
 	find_util $toolcheck
 	if [ "$util" = "" ]
 	then
-		echo "ERROR: tool $toolcheck needed to restore '$1' is not installed. Please install it."
+		if [ "$toolcheck" = "mariabackup" ]
+		then
+			find_util mariadb-backup
+			if [ "$util" = "" ]
+			then
+				echo "ERROR: tool $toolcheck needed to restore '$1' is not installed. Please install it."
+				exit 1
+			fi
+		else
+			echo "ERROR: tool $toolcheck needed to restore '$1' is not installed. Please install it."
 		exit 1
 	fi
 	if [ "$tool" = "mariabackup" ]
