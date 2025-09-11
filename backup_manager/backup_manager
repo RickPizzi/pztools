@@ -1703,7 +1703,8 @@ do_restore()
 			fi
 		else
 			echo "ERROR: tool $toolcheck needed to restore '$1' is not installed. Please install it."
-		exit 1
+			exit 1
+		fi
 	fi
 	if [ "$tool" = "mariabackup" ]
 	then
