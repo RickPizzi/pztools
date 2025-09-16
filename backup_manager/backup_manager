@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.6"
+BM_VERSION="4.8.8"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1087,7 +1087,8 @@ server_check()
 {
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
-        mysqladmin -u $user $sock_str $pass_str ping >$aux_log 2>&1
+	find_util mysqladmin
+        $util -u $user $sock_str $pass_str ping >$aux_log 2>&1
 	if [ $? -ne 0 ]
 	then
 		echo
@@ -1551,7 +1552,8 @@ do_remote_restore()
 	else    
 		backup_path="$BM_BACKUP_PATH"
 	fi      
-	ssh="ssh -q root@$target_host"
+	[ "$BM_SSH_KEY" != "" ] && ssh_key_opt="-i $BM_SSH_KEY"
+	ssh="ssh -q $ssh_key_opt -oStrictHostKeyChecking=no root@$target_host"
 	local_remote="$ssh"
 	replication_credentials
 	if [ "$repl_user" != "" ] 
