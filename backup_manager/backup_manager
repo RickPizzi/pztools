@@ -2402,6 +2402,7 @@ build_slave()
 	fi
 	if [ "$repl_user" != "" ]
 	then
+		state_update "setting up replication"
 		echo "*** Setting up replication on $1"
 		[ "$password" != "" ] && pass_str="-p$password"
 		config_lookup $1 socket || build_slave_failure $*
