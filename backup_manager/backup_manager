@@ -397,6 +397,7 @@ apply_binlogs()
 		last_seqno=$(echo "select substr(binlog_last, -6) from backup_history where uuid = '$bp';" | dbquery $DB)
 		[ $last_seqno -lt $wanted_seqno ] && continue
 		echo "extracting binlog backup $bp"
+		state_update "applying binlog backup $bp"
 		extract_binlog_piece $bp  || return 1
 		[ $scan_complete -eq 1 ] && break
 		[ "$bp" = "$target_binlog_backup_id" ] && break
@@ -2614,7 +2615,7 @@ perform_maria_restore()
 	mariabackup=$util
 	find_util mbstream
 	mbstream=$util
-	state_update "extracting full backup"
+	state_update "extracting full backup $uuid"
 	if [ "$target" != "-" ]
 	then
 		echo -n "extracting full backup $uuid... "
@@ -2632,7 +2633,7 @@ perform_maria_restore()
 	open_files_limit
 	echo -n "applying redo logs for $uuid... "
 	echo "--> $ssh $mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile
-	state_update "preparing full backup""
+	state_update "preparing full backup $uuid"
 	$ssh $mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
 	status=$?
 	echo
@@ -2653,14 +2654,14 @@ perform_maria_restore()
 		echo -n "extracting incremental backup $id... "
 		$ssh mkdir -p $target/$incdir
 		rm -f /tmp/xtrabackup*
-		state_update "extracting incremental backup"
+		state_update "extracting incremental backup $id"
 		echo "--> eval $reader | $unencryptor | $uncompressor | $ssh $mbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
 		eval $reader | $unencryptor 2>/dev/null | $uncompressor | $ssh $mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
 		status=$?
 		echo
 		[ $status -ne 0 ] && break
 		echo -n "applying redo logs for $id... "
-		state_update "preparing incremental backup"
+		state_update "preparing incremental backup $id"
 		echo "--> $ssh $mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir" >> $logfile
 		$ssh $mariabackup --prepare $mb_all $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full --incremental-dir=$target/$incdir >> $logfile 2>&1
 		status=$?
@@ -2675,7 +2676,7 @@ perform_maria_restore()
 	done
 	[ $status -ne 0 ] && return
 	echo -n "Finalizing backup... "
-	state_update "finalizing backup"
+	state_update "finalizing restore"
 	echo "--> $ssh $mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full" >> $logfile 
 	$ssh $mariabackup --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$target/full >> $logfile 2>&1
 	status=$?
@@ -2689,7 +2690,6 @@ perform_maria_restore()
 	then
 		[ "$backup_path" = "" ] && bxfolder=$target/.backupmanager || bxfolder=$backup_path/.backupmanager
 		[ "$BM_BINLOG_PATH" != "" ] && bxfolder=$BM_BINLOG_PATH/.backupmanager
-		state_update "applying binary logs"
 		apply_binlogs || exit 1
 	        echo "Done applying binary logs."
 	fi
