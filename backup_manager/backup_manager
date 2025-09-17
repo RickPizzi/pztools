@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.9"
+BM_VERSION="4.8.10"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -482,7 +482,6 @@ check_pit_availability()
 	then
 		bf=$(echo "select binlog_file from backup_history where uuid = '$uuid';" | dbquery $DB)
 		bp=$(echo "select binlog_position from backup_history where uuid = '$uuid';" | dbquery $DB)
-		#echo "full $uuid: $bf:$bp"
 		if [ "$bf" \> "$requested_binlog_file" ]
 		then
 			pit_not_present
@@ -515,14 +514,14 @@ check_pit_availability()
 			fi
 		done
 	else
-                blt=$(echo "select binlog_last_ts from backup_history where uuid = '$uuid';" | dbquery $DB)
+                blt=$(echo "select datetime(binlog_last_ts,'+1 second') from backup_history where uuid = '$uuid';" | dbquery $DB)
 		[ "$requested_binlog_ts" \< "$blt" ] && return
 		if [ "$requested_binlog_ts" = "$blt" ]
 		then
 			target_binlog_backup_id=$uuid
 			return
 		fi
-		 pt=$(echo "select uuid from backup_history where ((binlog_last_ts = '$requested_binlog_ts' and level in (0,1)) or (binlog_last_ts > '$requested_binlog_ts' and level = 3)) and status = 0 limit 1;" | dbquery $DB)
+		 pt=$(echo "select uuid from backup_history where ((datetime(binlog_last_ts,'+1 second') = '$requested_binlog_ts' and level in (0,1)) or (binlog_last_ts > '$requested_binlog_ts' and level = 3)) and status = 0 limit 1;" | dbquery $DB)
                 ref=$(echo "select ref_full_backup from backup_history where uuid = '$pt';" | dbquery $DB)
 		if [ "$ref" = "" ]
 		then
