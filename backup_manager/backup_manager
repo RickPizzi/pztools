@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.11"
+BM_VERSION="4.8.12"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -365,7 +365,7 @@ apply_binlogs()
 {
 	bf_start_file=$(echo "select binlog_file from backup_history where uuid = '$binlogs_starting_point';" | dbquery $DB)
 	bf_start_pos=$(echo "select binlog_position from backup_history where uuid = '$binlogs_starting_point';" | dbquery $DB)
-	bf_start_ts=$(echo "select binlog_last_ts from backup_history where uuid = '$binlogs_starting_point';" | dbquery $DB)
+	bf_start_ts=$(echo "select datetime(binlog_last_ts,'+1 second') from backup_history where uuid = '$binlogs_starting_point';" | dbquery $DB)
 	[ "$bf_start_file" = "$requested_binlog_file" -a "$bf_start_pos" = "$requested_binlog_position" ] && return 0
 	[ "$bf_start_ts" = "$requested_binlog_ts" ] && return 0
 	bf_parent=$(echo "select ref_full_backup from backup_history where uuid = '$binlogs_starting_point';" | dbquery $DB)
