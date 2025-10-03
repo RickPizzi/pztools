@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.13"
+BM_VERSION="4.8.14"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1559,6 +1559,7 @@ do_remote_restore()
 	[ "$BM_SSH_KEY" != "" ] && ssh_key_opt="-i $BM_SSH_KEY"
 	ssh="ssh -q $ssh_key_opt -oStrictHostKeyChecking=no root@$target_host"
 	local_remote="$ssh"
+	[ "$ulimit" = "" ] && ulimit=100000
 	replication_credentials
 	if [ "$repl_user" != "" ] 
 	then
@@ -2092,8 +2093,14 @@ open_files_limit()
 {
 	[ "$ulimit" = "" ] && return
 	limit_str="--open-files-limit=$ulimit"
-	curr_fmax=$(cat /proc/sys/fs/file-max)
-	[ $curr_fmax -lt $ulimit ] && echo $((ulimit+curr_fmax)) > /proc/sys/fs/file-max
+	if [ "$local_remote" != "eval" ]
+	then
+		curr_fmax=$($ssh cat /proc/sys/fs/file-max)
+		[ $curr_fmax -lt $ulimit ] && $ssh "echo $((ulimit+curr_fmax)) > /proc/sys/fs/file-max"
+	else
+		curr_fmax=$(cat /proc/sys/fs/file-max)
+		[ $curr_fmax -lt $ulimit ] && echo $((ulimit+curr_fmax)) > /proc/sys/fs/file-max
+	fi
 }
 
 perform_mariaunpacked_backup()
