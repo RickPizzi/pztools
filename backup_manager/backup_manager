@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.14"
+BM_VERSION="4.8.15"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1476,7 +1476,8 @@ get_repl_creds()
 		echo "WARNING: no replication info available (checked $mi)"
 		return
 	fi
-	if [ "$(tail -1 $mi)" != "END_MARKER" ]
+	tail -2 $mi | fgrep -q END_MARKER
+	if [ $? -ne 0 ]
 	then
 		echo "WARNING: $mi doesn't look like valid replication info, ignoring"
 		return
