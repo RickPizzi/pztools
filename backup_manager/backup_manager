@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.16"
+BM_VERSION="4.8.17"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1053,7 +1053,7 @@ parse_config()
 			exit 1
 		fi
 	fi
-	[ "$BM_DOWNLOADER" != "" ] && reader=$BM_DOWNLOADER
+		[ "$BM_DOWNLOADER" != "" ] && reader=$BM_DOWNLOADER
 	[ "$BM_SERVER_PATH" != "" ] && server_path=$BM_SERVER_PATH
 
 	lockfile=/tmp/backup_manager.lock
@@ -2418,25 +2418,30 @@ build_slave()
 		[ "$password" != "" ] && pass_str="-p$password"
 		config_lookup $1 socket || build_slave_failure $*
 		[ "$cfg" != "" ] && sock_str="-S$cfg" || sock_str=""
-		gtid=$(ssh -q $1 cat $2/xtrabackup_binlog_info | sed -re "s/^(.*)\s+(.*)\s+(.*)/\3/")
-		if [ "$gtid" = "" -a "$BM_OVERRIDE_GTID_POS" = "" -a "$BM_CLEAR_GTID_POS" = "" ]
-		then
-			echo "Unable to get GTID info for replication. Are GTIDs enabled on backup server?"
-			exit 1
-		fi
 		( 
 			echo "RESET MASTER;"
-			if [ "$BM_CLEAR_GTID_POS" = "" ]
+			echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass';"
+			if [ "$BM_FILE_POS" != "" -a "$BM_CLEAR_GTID_POS" = "" ]
 			then
-				if [ "$BM_OVERRIDE_GTID_POS" != "" ]
-				then
-					echo "SET GLOBAL gtid_slave_pos = '$BM_OVERRIDE_GTID_POS';"
-				else
-					echo "SET GLOBAL gtid_slave_pos = '$gtid';"
-				fi
-				echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass', MASTER_USE_GTID=slave_pos;"
+				chgc=$(ssh -q $1 cat $2/xtrabackup_binlog_info | sed -re "s/^(.*)\.([0-9]*)\s([0-9]*)\s(.*)$/MASTER_LOG_FILE='\1.\2', MASTER_LOG_POS=\3/")
+				echo "CHANGE MASTER TO $chgc;"
 			else
-				echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass';"
+				gtid=$(ssh -q $1 cat $2/xtrabackup_binlog_info | sed -re "s/^(.*)\s+(.*)\s+(.*)/\3/")
+				if [ "$gtid" = "" -a "$BM_OVERRIDE_GTID_POS" = "" -a "$BM_CLEAR_GTID_POS" = "" ]
+				then
+					echo "Unable to get GTID info for replication. Are GTIDs enabled on backup server?"
+					exit 1
+				fi
+				if [ "$BM_CLEAR_GTID_POS" = "" ]
+				then
+					if [ "$BM_OVERRIDE_GTID_POS" != "" ]
+					then
+						echo "SET GLOBAL gtid_slave_pos = '$BM_OVERRIDE_GTID_POS';"
+					else
+						echo "SET GLOBAL gtid_slave_pos = '$gtid';"
+					fi
+					echo "CHANGE MASTER TO MASTER_USE_GTID=slave_pos;"
+				fi
 			fi
 			[ "$repl_ssl" = "1" ] && echo "CHANGE MASTER TO MASTER_SSL=1, MASTER_SSL_CA='$repl_ssl_ca', MASTER_SSL_CERT='$repl_ssl_cert', MASTER_SSL_KEY='$repl_ssl_key';"
 			echo "START SLAVE;" 
