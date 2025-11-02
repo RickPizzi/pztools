@@ -2440,11 +2440,18 @@ build_slave()
 					else
 						echo "SET GLOBAL gtid_slave_pos = '$gtid';"
 					fi
+					echo "CHANGE MASTER TO MASTER_USE_GTID=slave_pos;"
 				fi
-				echo "CHANGE MASTER TO MASTER_USE_GTID=slave_pos;"
 			fi
 			[ "$repl_ssl" = "1" ] && echo "CHANGE MASTER TO MASTER_SSL=1, MASTER_SSL_CA='$repl_ssl_ca', MASTER_SSL_CERT='$repl_ssl_cert', MASTER_SSL_KEY='$repl_ssl_key';"
 			echo "START SLAVE;" 
+			if [ "$BM_CLEAR_GTID_POS" != "" ]
+			then
+				echo "SELECT SLEEP(5);"
+				echo "STOP SLAVE;"
+				echo "CHANGE MASTER TO MASTER_USE_GTID=slave_pos;"
+				echo "START SLAVE;"
+			fi
 		) | ssh -q $1 "tee /tmp/bm.change_master | $mysqlcli -ANr -u $user $sock_str $pass_str" || build_slave_failure $*
 		sleep 10
 		success=$(echo "show slave status\G" | ssh -q $1 $mysqlcli -Ar -u $user $sock_str $pass_str | grep 'Running:' | fgrep -c Yes)
