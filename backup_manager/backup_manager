@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.8.18"
+BM_VERSION="4.9.1"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -129,6 +129,7 @@ safe_defaults()
 	server_path="/usr/sbin/mysqld"
 	cloud_storage=0
 	local_remote="eval"
+	reset_binlogs=0
 }
 
 setup_db()
@@ -540,8 +541,8 @@ check_pit_availability()
 
 find_binlogs_backup_sp()
 {
-        last_binlog=$(echo "select binlog_file from backup_history where backup_tool = 'binlogs' and status=0 order by end_time desc limit 1;" | dbquery $DB)
-	if [ "$last_binlog" = "" ]
+        last_binlog=$(echo "select binlog_file from backup_history where backup_tool in ('binlogs', 'reset-binlogs') and status=0 order by end_time desc limit 1;" | dbquery $DB)
+	if [ "$last_binlog" = "" -o $reset_binlogs -eq 1 ]
 	then
         	binlog_start=$(echo "select binlog_file from backup_history where uuid = '$1';" | dbquery $DB)
 	else
@@ -1245,6 +1246,10 @@ perform_backup()
 			perform_mydumper_backup;;
 		'binlogs')
 			perform_binlogs_backup;;
+		'reset-binlogs')
+			reset_binlogs=1
+			tool="binlogs"
+			perform_binlogs_backup;;
 		*)
 			echo "Unsupported backup tool $tool"
 			clean_exit 1
@@ -1409,7 +1414,7 @@ sqlite_inventory()
 
 usage() 
 {               
-	echo "usage: $0 backup [ mariabackup | mariaunpacked | xtrabackup | zsnapshot | mydumper | mysqldump | smartdump | binlogs ]" 
+	echo "usage: $0 backup [ mariabackup | mariaunpacked | xtrabackup | zsnapshot | mydumper | mysqldump | smartdump | binlogs | reset-binlogs ]" 
 	exit 1                  
 }   
 
@@ -1438,7 +1443,7 @@ get_backup_level()
 				;;
 		'smartdump') 	level=2
 				;;
-		'binlogs') level=3;;
+		'binlogs'|'reset-binlogs') level=3;;
 		'mydumper') level=0;;
 		*) 	return 1;;
 	esac
