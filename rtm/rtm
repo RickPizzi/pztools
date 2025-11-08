@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.5.5
+VERSION=1.5.6
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -18,6 +18,7 @@ prettify()
         mi=$(($1/1000000))
         r=$(($1-mi*1000000))
         d=$((r/10000))
+	[ $d -lt 10 ] && d="0$d"
 	pretty="$mi.${d}M"
 }
 
@@ -588,9 +589,9 @@ do
 				then
 					read p_info <<<$(echo "select replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', '') from information_schema.processlist where id = $t_thread_id" | mysql -ANr $connstr)
 					p_info=$(echo "$p_info" | tr "\t" " " | tr "\n" " " | tr -s " ")
-					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s %s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_info"
+					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s %s$term_reset\n" "$t_ts" $t_id $h $m $s "$p_locks" "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_info"
 				else
-					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s $p_locks "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
+					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s "$p_locks" "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
 				fi
 				tl=$((tl+1))
 			fi
