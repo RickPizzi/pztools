@@ -640,9 +640,9 @@ is_encrypted()
 	[ "$1" = "" ] && exit 2
 	r=$(echo "select encryptor from backup_history where uuid='$1';" | dbquery $DB)
 	case "$r" in
-		'cat') exit 0;;
+		'cat') exit 1;;
 		'') exit 2;;
-		*) exit 1;;
+		*) exit 0;;
 	esac
 }
 
@@ -651,9 +651,9 @@ is_compressed()
 	[ "$1" = "" ] && exit 2
 	r=$(echo "select compressor from backup_history where uuid='$1';" | dbquery $DB)
 	case "$r" in
-		'cat') exit 0;;
+		'cat') exit 1;;
 		'') exit 2;;
-		*) exit 1;;
+		*) exit 0;;
 	esac
 }
 
