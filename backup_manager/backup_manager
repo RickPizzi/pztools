@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.1"
+BM_VERSION="4.9.2"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -633,6 +633,28 @@ confirm_operation()
 			'Y'|'y') l=0;;
 		esac
 	done
+}
+
+is_encrypted()
+{
+	[ "$1" = "" ] && exit 2
+	r=$(echo "select encryptor from backup_history where uuid='$1';" | dbquery $DB)
+	case "$r" in
+		'cat') exit 0;;
+		'') exit 2;;
+		*) exit 1;;
+	esac
+}
+
+is_compressed()
+{
+	[ "$1" = "" ] && exit 2
+	r=$(echo "select compressor from backup_history where uuid='$1';" | dbquery $DB)
+	case "$r" in
+		'cat') exit 0;;
+		'') exit 2;;
+		*) exit 1;;
+	esac
 }
 
 print_latest()
@@ -3071,6 +3093,12 @@ case "$1" in
 		;;
 	'print-latest') 
 		print_latest
+		;;
+	'is-encrypted') 
+		is_encrypted $2
+		;;
+	'is-compressed') 
+		is_compressed $2
 		;;
 	'print-latest-id') 
 		print_latest_id
