@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.5.6
+VERSION=1.5.8
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -352,6 +352,7 @@ parse_arguments()
 			exit 1
 		fi
 	fi
+	[ "$MYSQL_PWD" != "" ] && arg_password="$MYSQL_PWD"
 	if [ "$arg_host" != "" ]
 	then
 		if [ "$arg_user" = "" ]
