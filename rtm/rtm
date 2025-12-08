@@ -465,7 +465,7 @@ usage()
 init()
 {
 	[ $arg_quiet -eq 1 ] && return
-	[ "$arg_tag" != "" ] && hostname=$tag || hostname=$(hostname)
+	[ "$arg_tag" != "" ] && hostname=$arg_tag || hostname=$(hostname)
 	[ $arg_debug -eq 0 ] && clear
 	header
 }
