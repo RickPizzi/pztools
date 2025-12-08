@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.5.8
+VERSION=1.5.9
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -228,7 +228,7 @@ parse_arguments()
 	arg_nr=0
 	arg_snap_dir="/tmp"
 	arg_ask_pass=0
-	argl=$(getopt -o x -u -l"help,quiet,logfile:,interval:,kill:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
+	argl=$(getopt -o x -u -l"help,tag:,quiet,logfile:,interval:,kill:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
 	[ -s $tmpf ] && usage
 	argr=($argl)
 	i=0
@@ -256,6 +256,10 @@ parse_arguments()
 			'--use-file')
 				check_for_arg
 				arg_use_file=${argr[$((i+1))]}
+				;;
+			'--tag')
+				check_for_arg
+				arg_tag=${argr[$((i+1))]}
 				;;
 			'--interval')
 				check_for_arg
@@ -452,6 +456,7 @@ usage()
 	printf -- "--name-resolve-on\twhen reading from file, assume server has skip_name_resolve=OFF\n"
 	printf -- "--logfile\t\tlog activity about snapshots and kills\n"
 	printf -- "--quiet\t\t\tsuppresses output; useful with --kill\n"
+	printf -- "--tag\t\t\tdisplay tag at top of screen instead of hostname\n"
 	printf -- "--help\t\t\tthis help\n"
 	printf "\n"
 	exit 1
@@ -460,7 +465,7 @@ usage()
 init()
 {
 	[ $arg_quiet -eq 1 ] && return
-	hostname=$(hostname)
+	[ "$arg_tag" != "" ] && hostname=$tag || hostname=$(hostname)
 	[ $arg_debug -eq 0 ] && clear
 	header
 }
