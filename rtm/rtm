@@ -580,7 +580,7 @@ do
 			fi
 			pretty_time $t_runtime
 			p_locks=""
-			if [ "$t_locks" != "" ]
+			if [ $t_locks -gt 0 ]
 			then
 				prettify $t_locks
 				p_locks=$pretty
