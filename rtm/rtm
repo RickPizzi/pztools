@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.5.9
+VERSION=1.5.10
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -579,8 +579,12 @@ do
 				fi
 			fi
 			pretty_time $t_runtime
-			prettify $t_locks
-			p_locks=$pretty
+			p_locks=""
+			if [ "$t_locks" != "" ]
+			then
+				prettify $t_locks
+				p_locks=$pretty
+			fi
 			t_undos=$(echo "$t_undostr" | sed -nre "s/^(.*)entries ([0-9]*)$/\2/p")
 			p_undos=""
 			if [ "$t_undos" != "" ]
