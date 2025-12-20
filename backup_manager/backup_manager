@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.2"
+BM_VERSION="4.9.3"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2854,6 +2854,7 @@ disk_space()
 
 check_slave_status()
 {
+	[ "$tool" = "binlogs" ] && return
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
 	if [ "$hb_schema" != "" -a "$hb_table" != "" -a "$hb_stale_secs" != "" ]
