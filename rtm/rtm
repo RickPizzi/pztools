@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.5.10
+VERSION=1.6.1
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -82,7 +82,7 @@ help_menu()
 
 header()
 {
-	printf "$term_bold%-63s $term_reset" "MariaDB Realtime Transactions Monitor v$VERSION"
+	printf "$term_bold%-55s $term_reset" "MariaDB Realtime Transactions Monitor v$VERSION"
 	case $hdrmsg in
 		1)
 			printf "$term_rev%-30s$term_reset " "    *** SNAPSHOT TAKEN ***"
@@ -94,19 +94,22 @@ header()
 			printf "%-30s " $hostname
 			;;
 	esac
-	printf "%20s" " "
-	if [ "$arg_use_file" = "" ]
+	printf "%10s" " "
+	if [ "$arg_use_file" = "" -a -s $snapfile ]
 	then
 		prettify $(cat $snapfile | grep ^History | sed -re "s/History list length ([0-9]*)/\1/")
+		cpu=$(tail -1 $snapfile | tr -s " " | cut -d "," -f 1,2,5,4 | sed -e "s/%Cpu(s)/Cpu/")
 		if [ $COLUMNS -gt 170 ]
 		then
-	     		printf "%26s" "History list length $pretty"
-			printf "%$((COLUMNS-169))s" " "
+	     		printf "%20s" "History: $pretty"
+			#printf "%$((COLUMNS-169))s" " "
+			printf "%40s" "$cpu"
+			printf "%$((COLUMNS-185))s" " "
 		else
-			printf "%$((COLUMNS-143))s" " "
+			printf "%$((COLUMNS-159))s" " "
 		fi
 	else
-		printf "%$((COLUMNS-143))s" " "
+		printf "%$((COLUMNS-159))s" " "
 	fi
 	printf "%s\n" "$(date)"
 	[ $arg_debug -eq 1 ] && echo "DEBUG: w=$COLUMNS h=$LINES min=$PROCLIST_MIN_TERM_SIZE"
@@ -514,6 +517,7 @@ do
 	else
 		wc=0
 		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
+		top -b -d 0.1 | grep -m 1 Cpu >> $snapfile 
 	fi
 	if [ -s $tmpf ]
 	then 
