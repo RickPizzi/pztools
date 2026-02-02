@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.3"
+BM_VERSION="4.9.4"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -283,8 +283,8 @@ check_free_space()
 		msg="Filesystem for backup target directory is full. Exiting."
 		echo $msg
 		[ "$failure_notify" != "" ] && echo $msg | send_mail "$customer: backup FAILED" $failure_notify
-		status=1; fire_webhook
-			exit 1
+		status=1; fire_webhook "out of disk space"
+		exit 1
 	fi
 	if [ $level -eq 0 -a $disk_space_p_avail -lt $min_disk_pfree ]
 	then
@@ -292,7 +292,7 @@ check_free_space()
 		msg="Filesystem has $disk_space_p_avail% ($disk_space_avail) free, but $min_disk_pfree% is required. Exiting."
 		echo $msg
 		[ "$failure_notify" != "" ] && echo $msg | send_mail "$customer: backup FAILED" $failure_notify
-		status=1; fire_webhook
+		status=1; fire_webhook "not enough free space"
 		exit 1
 	fi
 }
@@ -1127,7 +1127,7 @@ server_check()
 	fi
 	echo
 	echo "pre-flight checks failed, cannot continue. Exiting."
-	status=1; fire_webhook
+	status=1; fire_webhook "cannot connect to MariaDB"
 	exit 1
 }
 
@@ -1237,6 +1237,7 @@ fire_webhook()
 {
 	[ "$webhook_script" = "" ] && return
 	[ "$customer" != "" ] && export BACKUP_LABEL="$customer"
+	export BACKUP_MESSAGE="$1"
 	eval $webhook_script $tool $level $status
 }
 
@@ -1321,7 +1322,7 @@ perform_binlogs_backup()
 		fi
 	fi
 	update_backup_status
-	fire_webhook
+	fire_webhook "$(tail -1 $error_log)"
 }
 
 save_binlog_info()
@@ -2065,7 +2066,7 @@ perform_zsnapshot_backup()
 	fi
 	echo
 	update_backup_status
-	fire_webhook
+	fire_webhook "$(tail -1 $aux_log)"
 }
 
 perform_maria_backup()
@@ -2114,7 +2115,7 @@ perform_maria_backup()
 	esac
 	get_lsn
 	update_backup_status
-	fire_webhook
+	fire_webhook "$(tail -1 $logfile)"
 }
 
 open_files_limit()
@@ -2179,7 +2180,7 @@ perform_mariaunpacked_backup()
         [ $status -ne 0 ] && return
         tail -1 $logfile | fgrep -q "completed OK"
         status=$?
-	fire_webhook
+	fire_webhook "$(tail -1 $logfile)"
         [ $status -ne 0 ] && return
         get_lsn
         update_backup_status export
@@ -2216,7 +2217,7 @@ perform_xtra_backup()
 	esac
 	get_lsn
 	update_backup_status
-	fire_webhook
+	fire_webhook "$(tail -1 $logfile)"
 }
 
 perform_mydumper_backup()
@@ -2245,7 +2246,7 @@ perform_mydumper_backup()
 			;;
 	esac
 	update_backup_status
-	fire_webhook
+	fire_webhook "$(tail -1 $logfile)"
 }
 
 set_read_only()
@@ -2275,7 +2276,7 @@ perform_smartdump_backup()
 	run_with_timeout
 	[ "$ro" = "1" ] && set_read_only 1
 	update_backup_status
-	fire_webhook
+	fire_webhook "$(tail -1 $logfile)"
 }
 
 perform_mysqldump_backup()
@@ -2296,7 +2297,7 @@ perform_mysqldump_backup()
 	$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host $port_str $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 	run_with_timeout
 	update_backup_status
-	fire_webhook
+	fire_webhook "$(tail -1 $logfile)"
 }
 
 perform_mydumper_restore()
@@ -2860,6 +2861,7 @@ check_slave_status()
 	if [ "$hb_schema" != "" -a "$hb_table" != "" -a "$hb_stale_secs" != "" ]
 	then
 		hb_delay=$(echo "select timestampdiff(second, ts, now()) from $hb_schema.$hb_table order by ts desc limit 1" | mysql -ANr -u $user $sock_str $pass_str)
+		w_msg="replication more than $hb_stale_secs behind"
 		if [ "$hb_delay" = "" ]
 		then
 			true
@@ -2867,6 +2869,7 @@ check_slave_status()
 			[ $hb_delay -ge $hb_stale_secs ]
 		fi
 	else
+		w_msg="replication not running"
 		echo "show slave status\G" | mysql -Ar -u $user $sock_str $pass_str | grep -P "Slave_(.*)_Running:" | egrep -q "No|Connecting"
 	fi
 	if [ $? -eq 0 ]
@@ -2875,7 +2878,7 @@ check_slave_status()
 		echo $msg
 		[ "$tool" = "binlogs" ] && exit 1
 		[ "$failure_notify" != "" ] && echo $msg | send_mail "$customer: backup FAILED" $failure_notify
-		status=1; fire_webhook
+		status=1; fire_webhook "$w_msg"
 		exit 1
 	fi
 }
