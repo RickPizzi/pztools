@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.4"
+BM_VERSION="4.9.5"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2968,6 +2968,7 @@ mariadb_instance()
 			echo -n "starting MariaDB auxiliary instance on $target... "
 			$local_remote "echo 'server_id=987654321' >> $target/backup-my.cnf"
 			$local_remote "echo 'lower_case_table_names=$case_insens' >> $target/backup-my.cnf"
+			$local_remote "echo 'max_allowed_packet=1073741824' >> $target/backup-my.cnf"
 			$ssh $server_path --defaults-file=$target/backup-my.cnf  --innodb_file_per_table  --skip-grant-tables --basedir=/usr --datadir=$target --plugin-dir=/usr/lib64/mysql/plugin --user=root --log-error=$target/backup_manager_mysqld.err $limit_str --pid-file=$target/mysql.pid --socket=/tmp/backup_manager.sock --port=65432 2>> /tmp/backup_manager_mysqld.err &
 			sleep 10
 			instance=$($ssh cat $target/mysql.pid 2>/dev/null)
