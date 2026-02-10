@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.6.2
+VERSION=1.6.3
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -518,6 +518,7 @@ do
 		snapt=$(egrep -a "^(.*)0x(.*)INNODB MONITOR OUTPUT$" $scrb_tmpf | sed -re "s/^(.*) 0x(.*)$/\1/")
 		hdrmsg=2
 	else
+		tst=$(date +%s%3N)
 		wc=0
 		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
 		top -b -d 0.1 | grep -m 1 Cpu >> $snapfile 
@@ -624,7 +625,11 @@ do
 	fi
 	screen_update
 	[ "$arg_use_file" != "" ] && break
-	read -s -t $refresh -n 1 ui
+	ten=$(date +%s%3N)
+	tel=$((ten-tst))
+	twt=$((refresh*1000-tel))
+	rwt=$(echo "scale=2;$twt/1000" | bc)
+	read -s -t $rwt -n 1 ui
 	case "${ui,,}" in
 		'a') all=$(ask "all transactions" yesno $all);;
 		'i') refresh=$(ask "refresh interval" number 1 60);;
