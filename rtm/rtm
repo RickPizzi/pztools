@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.6.3
+VERSION=1.6.4
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -88,10 +88,10 @@ header()
 			printf "$term_rev%-25s$term_reset " " *** SNAPSHOT TAKEN ***"
 			;;
 		2)
-			printf "$term_rev%-25s$term_reset " "snapshot $snapt"
+			printf "$term_rev%-25s$term_reset " "$snapt"
                         ;;
 		*)
-			printf "%-25s " $hostname
+			[ ${#hostname} -le 25 ] && printf "%-25s " $hostname || printf "%-25s " "...${hostname: -22}"
 			;;
 	esac
 	printf "%4s" " "
