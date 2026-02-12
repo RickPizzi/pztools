@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.6.4
+VERSION=1.6.5
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -628,7 +628,7 @@ do
 	ten=$(date +%s%3N)
 	tel=$((ten-tst))
 	twt=$((refresh*1000-tel))
-	rwt=$(echo "scale=2;$twt/1000" | bc)
+	rwt=$(awk "BEGIN { print ($twt/1000) }")
 	read -s -t $rwt -n 1 ui
 	case "${ui,,}" in
 		'a') all=$(ask "all transactions" yesno $all);;
