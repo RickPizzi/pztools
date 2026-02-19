@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.6.5
+VERSION=1.7.1
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -60,6 +60,7 @@ help_menu()
 		"P=processlist info ($processlist)"
 		"S=take snapshot"
 		"W=waiting only ($waitingonly)"
+		"U=filter by user ('$user_filter')"
 		"Q=quit monitor"
 	)
 	echo -n "keys: "
@@ -153,6 +154,12 @@ ask()
 				echo $ui
 				break
 				;;
+			'string')
+				echo -n ": " 1>&2
+				read ui
+				echo $ui
+				break
+				;;
 			'yesno')
 				if [ "$3" != "" ]
 				then
@@ -173,6 +180,11 @@ ask()
 				;;
 		esac
 	done
+}
+
+filter_user()
+{
+	user_filter="$1"
 }
 
 kill_transaction()
@@ -234,7 +246,7 @@ parse_arguments()
 	arg_nr=0
 	arg_snap_dir="/tmp"
 	arg_ask_pass=0
-	argl=$(getopt -o x -u -l"help,tag:,quiet,logfile:,interval:,kill:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
+	argl=$(getopt -o x -u -l"help,tag:,quiet,logfile:,interval:,kill:,filter-by-user:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
 	[ -s $tmpf ] && usage
 	argr=($argl)
 	i=0
@@ -262,6 +274,10 @@ parse_arguments()
 			'--use-file')
 				check_for_arg
 				arg_use_file=${argr[$((i+1))]}
+				;;
+			'--filter-by-user')
+				check_for_arg
+				user_filter=${argr[$((i+1))]}
 				;;
 			'--tag')
 				check_for_arg
@@ -452,6 +468,7 @@ usage()
 	printf -- "--interval\t\trefresh interval (1-60 seconds)\n"
 	printf -- "--all-transactions\tinclude just started transactions (lifetime < 1s)\n"
 	printf -- "--processlist\t\tinclude info from processlist\n"
+	printf -- "--filter-by-user\tshow transactions by specified user\n"
 	printf -- "--kill\t\t\tkill transactions running since X seconds or more (30-1800)\n"
 	printf -- "--locking-only\t\tfilter transactions holding row locks\n"
 	printf -- "--waiting-only\t\tfilter transactions waiting to acquire a lock\n"
@@ -556,6 +573,8 @@ do
 			then
 				t_extra="$t_ipaddr"
 				t_ipaddr=""
+			else
+				[ "$user_filter" != "" -a "$t_user" != "$user_filter" ] && continue
 			fi
 			if [ $tl -eq $LINES -a "$arg_use_file" = "" ]
 			then
@@ -634,6 +653,7 @@ do
 		'a') all=$(ask "all transactions" yesno $all);;
 		'i') refresh=$(ask "refresh interval" number 1 60);;
 		'k') kill_transaction $(ask "thread ID to kill" number);;
+		'u') filter_user $(ask "user" string);;
 		'l') lockingonly=$(ask "only locking transactions" yesno $lockingonly);;
 		'o') olderfirst=$(ask "older transactions first" yesno $olderfirst);;
 		'p') check_terminal_width && processlist=$(ask "processlist info" yesno $processlist) || pak "Insufficient terminal width";;
