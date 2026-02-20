@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.5"
+BM_VERSION="4.9.6"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1618,9 +1618,9 @@ find_remote_mysql()
 {
 	if [ "$local_remote" != "eval" ]
 	then
-		mysqlcli=$($ssh "find / -xdev -type f -a -perm /001 -a \( -name mysql -o -name mariadb \)" | head -1)
+		mysqlcli=$($ssh "find / -xdev -type f -a -perm /001 -a \( -name mysql -o -name mariadb \)" | grep -v ^/etc/ | head -1)
 	else
-		mysqlcli=$(find / -xdev -type f -a -perm /001 -a \( -name mysql -o -name mariadb \) | head -1)
+		mysqlcli=$(find / -xdev -type f -a -perm /001 -a \( -name mysql -o -name mariadb \) | grep -v ^/etc/ | head -1)
 	fi
 	[ "$mysqlcli" = "" ] && mysqlcli="mysql"
 }
@@ -1691,7 +1691,7 @@ find_util()
 {
 	util=$($ssh which $1 2>/dev/null)
 	[ "$util" != "" ] && return
-	util=$($ssh find / -xdev -type f -a -perm /001 -a -name $1 | head -1)
+	util=$($ssh find / -xdev -type f -a -perm /001 -a -name $1 | grep -v ^/etc/ | head -1)
 }
 
 do_restore()
