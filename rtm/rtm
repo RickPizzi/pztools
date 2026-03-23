@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.7.1
+VERSION=1.7.2
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -99,7 +99,7 @@ header()
 	if [ "$arg_use_file" = "" -a -s $snapfile ]
 	then
 		prettify $(cat $snapfile | grep ^History | sed -re "s/History list length ([0-9]*)/\1/")
-		cpu=$(tail $snapfile | grep ^%Cpu | tr -s " " | cut -d "," -f 1,2,5,4 | sed -e "s/%Cpu(s)/Cpu/")
+		[ $localhost -eq 1 ] && cpu=$(tail $snapfile | grep ^%Cpu | tr -s " " | cut -d "," -f 1,2,5,4 | sed -e "s/%Cpu(s)/Cpu/")
 		aconn=$(tail $snapfile | fgrep Threads_connected | cut -f 2)
 		mconn=$(tail $snapfile | fgrep max_connections| cut -f 2)
 		if [ $COLUMNS -gt 190 ]
@@ -443,6 +443,9 @@ parse_arguments()
 			echo "--name-resolve-on is only meaningful when --use-file is specified"
 			exit 1
 	fi
+	case "$arg_host" in
+		'localhost'|'127.0.0.1') localhost=1;;
+	esac
 }
 
 check_for_arg()
@@ -508,6 +511,7 @@ screen_update()
 	fgrep -avh __SNAP $scrh_tmpf $scrb_tmpf
 }
 
+localhost=0
 refresh=3
 hdrmsg=0
 tl=0
@@ -538,7 +542,10 @@ do
 		tst=$(date +%s%3N)
 		wc=0
 		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
-		top -b -d 0.1 | grep -m 1 Cpu >> $snapfile 
+		if [ $localhost -eq 1 ]
+		then
+			top -b -d 0.1 | grep -m 1 Cpu >> $snapfile 
+		fi
 		echo "show global status like 'threads_connected'; show global variables like 'max_connections'" | mysql -ANr $connstr >> $snapfile
 	fi
 	if [ -s $tmpf ]
