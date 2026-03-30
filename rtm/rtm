@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.7.9
+VERSION=1.7.10
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -35,6 +35,7 @@ init_terminal()
 	term_bold=$(tput bold)
 	term_rev=$(tput rev)
 	term_reset=$(tput sgr0)
+	check_terminal_width
 }
 
 check_terminal_width()
@@ -674,24 +675,24 @@ do
 	#twt=$((refresh*1000-tel))
 	#rwt=$(awk "BEGIN { print ($twt/1000) }")
 	#[ $rwt -lt 0 ] && rwt=0
-	read -s -t $refresh -n 1 ui
-	case "${ui,,}" in
-		'a') all=$(ask "all transactions" yesno $all);;
-		'i') refresh=$(ask "refresh interval" number 1 60);;
-		'k') kill_transaction $(ask "thread ID to kill" number);;
-		'u') filter_user $(ask "user" string);;
-		'l') lockingonly=$(ask "only locking transactions" yesno $lockingonly);;
-		'o') olderfirst=$(ask "older transactions first" yesno $olderfirst);;
-		'p') check_terminal_width && processlist=$(ask "processlist info" yesno $processlist) || pak "Insufficient terminal width";;
-		'q') echo; echo "Bye";;
-		's') snapshot;;
-		'w') waitingonly=$(ask "only waiting transactions" yesno $waitingonly);;
+	read -s -t $refresh -n 1 ui || continue
+	case "${ui}" in
+		'a'|'A') all=$(ask "all transactions" yesno $all);;
+		'i'|'I') refresh=$(ask "refresh interval" number 1 60);;
+		'k'|'K') kill_transaction $(ask "thread ID to kill" number);;
+		'u'|'U') filter_user $(ask "user" string);;
+		'l'|'L') lockingonly=$(ask "only locking transactions" yesno $lockingonly);;
+		'o'|'O') olderfirst=$(ask "older transactions first" yesno $olderfirst);;
+		'p'|'P') check_terminal_width && processlist=$(ask "processlist info" yesno $processlist) || pak "Insufficient terminal width";;
+		'q'|'Q') echo; echo "Bye";;
+		's'|'S') snapshot;;
+		'w'|'W') waitingonly=$(ask "only waiting transactions" yesno $waitingonly);;
 	esac
-	case "${ui,,}" in
-		'a'|'l'|'o'|'p'|'s'|'w')
+	case "${ui}" in
+		'a'|'A'|'l'|'L'|'o'|'O'|'p'|'P'|'s'|'S'|'w'|'W')
 			screen_update
 			sleep 1.5
 			;;
 	esac
-	[ "$ui" = "q" ] && break
+	[ "${ui,,}" = "q" ] && break
 done
