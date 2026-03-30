@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.7.2
+VERSION=1.7.3
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -383,14 +383,14 @@ parse_arguments()
 	then
 		if [ "$arg_user" = "" ]
 		then
-			echo "--host requires --user and --password"
+			echo "--host requires --user"
 			exit 1
 		fi
-		if [ "$arg_password" = "" -a $arg_ask_pass -eq 0 ]
-		then
-			echo "--host requires --user and --password"
-			exit 1
-		fi
+#		if [ "$arg_password" = "" -a $arg_ask_pass -eq 0 ]
+#		then
+#			echo "--host requires --user and --password"
+#			exit 1
+#		fi
 	fi
 	if [ "$arg_user" != "" ]
 	then
@@ -399,11 +399,11 @@ parse_arguments()
 			echo "--user requires --host"
 			exit 1
 		fi
-		if [ "$arg_password" = "" -a $arg_ask_pass -eq 0 ]
-		then
-			echo "--user requires --password"
-			exit 1
-		fi
+#		if [ "$arg_password" = "" -a $arg_ask_pass -eq 0 ]
+#		then
+#			echo "--user requires --password"
+#			exit 1
+#		fi
 	fi
 	if [ "$arg_password" != "" ]
 	then
@@ -420,7 +420,12 @@ parse_arguments()
 	fi
 	if [ "$arg_host" != "" ]
 	then
-		connstr="-h $arg_host -u $arg_user -p$arg_password"
+		if [ "$arg_password" != "" ]
+		then
+			connstr="-h $arg_host -u $arg_user -p$arg_password"
+		else
+			connstr="-h $arg_host -u $arg_user"
+		fi
 		if [ "$arg_socket" != "" ]
 		then
 			connstr="$connstr -S $arg_socket"
