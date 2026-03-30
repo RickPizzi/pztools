@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.7.5
+VERSION=1.7.6
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -247,7 +247,7 @@ parse_arguments()
 	arg_snap_dir="/tmp"
 	arg_ask_pass=0
 	arg_skip_cpu=0
-	argl=$(getopt -o x -u -l"help,tag:,quiet,logfile:,interval:,kill:,filter-by-user:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
+	argl=$(getopt -o x -u -l"help,tag:,quiet,skip-cpu,logfile:,interval:,kill:,filter-by-user:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
 	[ -s $tmpf ] && usage
 	argr=($argl)
 	i=0
