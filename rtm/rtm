@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.7.3
+VERSION=1.7.4
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -99,7 +99,7 @@ header()
 	if [ "$arg_use_file" = "" -a -s $snapfile ]
 	then
 		prettify $(cat $snapfile | grep ^History | sed -re "s/History list length ([0-9]*)/\1/")
-		[ $localhost -eq 1 ] && cpu=$(tail $snapfile | grep ^%Cpu | tr -s " " | cut -d "," -f 1,2,5,4 | sed -e "s/%Cpu(s)/Cpu/")
+		[ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ] && cpu=$(tail $snapfile | grep ^%Cpu | tr -s " " | cut -d "," -f 1,2,5,4 | sed -e "s/%Cpu(s)/Cpu/")
 		aconn=$(tail $snapfile | fgrep Threads_connected | cut -f 2)
 		mconn=$(tail $snapfile | fgrep max_connections| cut -f 2)
 		if [ $COLUMNS -gt 190 ]
@@ -246,6 +246,7 @@ parse_arguments()
 	arg_nr=0
 	arg_snap_dir="/tmp"
 	arg_ask_pass=0
+	arg_skip_cpu=0
 	argl=$(getopt -o x -u -l"help,tag:,quiet,logfile:,interval:,kill:,filter-by-user:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
 	[ -s $tmpf ] && usage
 	argr=($argl)
@@ -289,6 +290,9 @@ parse_arguments()
 				;;
 			'--all-transactions')
 				all="yes"	
+				;;
+			'--skip-cpu')
+				arg_skip_cpu=1
 				;;
 			'--processlist')
 				check_terminal_width
@@ -547,7 +551,7 @@ do
 		tst=$(date +%s%3N)
 		wc=0
 		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
-		if [ $localhost -eq 1 ]
+		if [ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ]
 		then
 			top -b -d 0.1 | grep -m 1 Cpu >> $snapfile 
 		fi
