@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.7.8
+VERSION=1.7.9
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -39,6 +39,9 @@ init_terminal()
 
 check_terminal_width()
 {
+	tsz=$(stty size)
+	LINES=${tsz% *}
+	COLUMNS=${tsz#* }
 	[ $COLUMNS -lt $PROCLIST_MIN_TERM_SIZE ] && return 1 || return 0
 }
 
@@ -554,8 +557,8 @@ do
 		snapt=$(egrep -a "^(.*)0x(.*)INNODB MONITOR OUTPUT$" $scrb_tmpf | sed -re "s/^(.*) 0x(.*)$/\1/")
 		hdrmsg=2
 	else
-		tst=$(date +%s%3N)
 		wc=0
+		check_terminal_width
 		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | $grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
 		if [ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ]
 		then
