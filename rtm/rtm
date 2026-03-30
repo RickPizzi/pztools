@@ -3,7 +3,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.7.4
+VERSION=1.7.5
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -457,6 +457,11 @@ parse_arguments()
 	esac
 }
 
+grep_check()
+{
+	which ggrep && grep="ggrep" || grep="grep"
+}
+
 check_for_arg()
 {
 	[ ${argr[$((i+1))]:0:2} != "--" ] && return
@@ -538,19 +543,20 @@ trap 'rm -f $tmpf $scrh_tmpf $scrb_tmpf $snapfile' 0
 init_terminal
 parse_arguments $*
 access_check
+grep_check
 get_nr
 init
 while true
 do
 	if [ "$arg_use_file" != "" ]
 	then
-		cat $arg_use_file | tee $scrb_tmpf | grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" 2>/tmp/grepout | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id" > $tmpf 
+		cat $arg_use_file | tee $scrb_tmpf | $grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" 2>/tmp/grepout | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id" > $tmpf 
 		snapt=$(egrep -a "^(.*)0x(.*)INNODB MONITOR OUTPUT$" $scrb_tmpf | sed -re "s/^(.*) 0x(.*)$/\1/")
 		hdrmsg=2
 	else
 		tst=$(date +%s%3N)
 		wc=0
-		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
+		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | $grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
 		if [ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ]
 		then
 			top -b -d 0.1 | grep -m 1 Cpu >> $snapfile 
