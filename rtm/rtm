@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.7.10
+VERSION=1.8.1
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -102,14 +102,14 @@ header()
 	then
 		prettify $(cat $snapfile | grep ^History | sed -re "s/History list length ([0-9]*)/\1/")
 		[ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ] && cpu=$(tail $snapfile | grep ^%Cpu | tr -s " " | cut -d "," -f 1,2,5,4 | sed -e "s/%Cpu(s)/Cpu/")
-		aconn=$(tail $snapfile | fgrep Threads_connected | cut -f 2)
-		mconn=$(tail $snapfile | fgrep max_connections| cut -f 2)
 		if [ $COLUMNS -gt 190 ]
 		then
+			aconn=$(tail $snapfile | grep ^Threads_connected | cut -d" " -f 2)
+			mconn=$(tail $snapfile | grep ^max_connections | cut -d" " -f 2)
 			printf "Conns: %5d/%d   " $aconn $mconn 
 	     		printf "%-17s" "History: $pretty"
 			#printf "%$((COLUMNS-169))s" " "
-			printf "%-40s" "$cpu"
+			printf "%-39s" "$cpu"
 			printf "%$((COLUMNS-185))s" " "
 		else
 			printf "%$((COLUMNS-108))s" " "
@@ -216,15 +216,15 @@ kill_transaction()
 
 get_nr()
 {
-	[ "$arg_use_file" = "" ] && arg_nr=$(echo "select 1 - @@skip_name_resolve" | mysql -ANr $connstr 2>/dev/null)
-	if [ $arg_nr -eq 0 ]
-	then
+#	[ "$arg_use_file" = "" ] && arg_nr=$(echo "select 1 - @@skip_name_resolve" | mysql -ANr $connstr 2>/dev/null)
+#	if [ $arg_nr -eq 0 ]
+#	then
 		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._]*)(\s*)([A-Za-z0-9_\-]*)\s?(.*)$/\2+\5+\7+\8@/g"
 		localhost_edit="s/no_match__g//"
-	else
-		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._-]*) ([A-Za-z0-9\._]*) ([A-Za-z0-9_\-]*)\s?(.*)$/\2+\6+\7+\8@/g"
-		localhost_edit="s/localhost\s/localhost localhost /"
-	fi
+#	else
+#		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._-]*) ([A-Za-z0-9\._]*) ([A-Za-z0-9_\-]*)\s?(.*)$/\2+\6+\7+\8@/g"
+#		localhost_edit="s/localhost\s/localhost localhost /"
+#	fi
 }
 
 snapshot()
@@ -527,6 +527,43 @@ screen_update()
 	fgrep -avh __SNAP $scrh_tmpf $scrb_tmpf
 }
 
+coproc_setup()
+{
+	[ "$arg_use_file" != "" ] && return
+	while true
+	do
+		coproc mysqlc { script /dev/null mysql -ANrs $connstr 2>&1; }
+		sleep 4
+		if [ "${mysqlc[1]}" != "" ]
+		then
+			exec 100>&${mysqlc[0]} 101>&${mysqlc[1]}
+			break
+		else
+			echo "connection failed, retrying"
+		fi
+	done
+}
+
+read_results()
+{
+	rm -f $1
+	while true
+	do
+		while read -t 0.05 -r -u 100 row
+        	do
+			echo "$row"
+			#echo "DEBUG READ $row" 1>&2
+		done | tr -d "\r" >> $1
+		tail $1 | fgrep -q "rtm_done" && break
+	done
+}
+
+send_command()
+{
+	echo "$1;" >&101
+	echo "-- rtm_done" >&101
+}
+
 localhost=0
 refresh=3
 hdrmsg=0
@@ -537,16 +574,19 @@ olderfirst=yes
 lockingonly=no
 waitingonly=no
 tmpf=/tmp/rtw.$$
+tmpf_proc=/tmp/rtw.proc.$$
 scrh_tmpf=/tmp/rtw_sh.$$
 scrb_tmpf=/tmp/rtw_sb.$$
 snapfile=/tmp/rtw.sn.$$
-trap 'rm -f $tmpf $scrh_tmpf $scrb_tmpf $snapfile' 0
+outfile=/tmp/rtw.of.$$
+trap 'rm -f $tmpf $tmpf_proc $scrh_tmpf $scrb_tmpf $snapfile $outfile' 0
 
 init_terminal
 parse_arguments $*
-access_check
+#access_check
 grep_check
 get_nr
+coproc_setup
 init
 while true
 do
@@ -558,12 +598,26 @@ do
 	else
 		wc=0
 		check_terminal_width
-		echo "show engine innodb status\G" | mysql -ANr $connstr | tee $snapfile | $grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
+		send_command "show engine innodb status"
+		read_results $outfile
+		cat $outfile | tee $snapfile | $grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
+		if [ "$processlist" = "yes" ]
+		then
+			send_command "select id, replace(replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', ''), '\t', '') from information_schema.processlist;"
+			read_results $tmpf_proc
+		fi
 		if [ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ]
 		then
 			top -b -d 0.1 | grep -m 1 Cpu >> $snapfile 
 		fi
-		echo "show global status like 'threads_connected'; show global variables like 'max_connections'" | mysql -ANr $connstr >> $snapfile
+		echo "show global status like 'threads_connected';" >&101
+		read -t 1 -r -u 100 tc
+		read -t 1 -r -u 100 tc
+		echo $tc | tr -d "\r" >> $snapfile
+		echo " show global variables like 'max_connections';" >&101
+		read -t 1 -r -u 100 mc
+		read -t 1 -r -u 100 mc
+		echo $mc | tr -d "\r" >> $snapfile
 	fi
 	if [ -s $tmpf ]
 	then 
@@ -649,8 +703,7 @@ do
 			then
 				if [ "$processlist" = "yes" ]
 				then
-					read p_info <<<$(echo "select replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', '') from information_schema.processlist where id = $t_thread_id" | mysql -ANr $connstr)
-					p_info=$(echo "$p_info" | tr "\t" " " | tr "\n" " " | tr -s " ")
+					p_info=$(grep "^$t_thread_id\t" $tmpf_proc | cut -f 2 | tr -s " ")
 					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s %s$term_reset\n" "$t_ts" $t_id $h $m $s "$p_locks" "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_info"
 				else
 					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s "$p_locks" "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
