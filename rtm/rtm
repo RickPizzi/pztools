@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.8
+VERSION=1.8.9
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -106,8 +106,8 @@ header()
 		[ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ] && cpu=$(tail $snapfile | grep ^%Cpu | tr -s " " | cut -d "," -f 1,2,5,4 | sed -e "s/%Cpu(s)/Cpu/")
 		if [ $COLUMNS -gt 190 ]
 		then
-			aconn=$(tail $snapfile | grep ^Threads_connected | cut -d" " -f 2)
-			mconn=$(tail $snapfile | grep ^max_connections | cut -d" " -f 2)
+			aconn=$(tail $snapfile | grep ^Threads_connected | cut -f 2)
+			mconn=$(tail $snapfile | grep ^max_connections | cut -f 2)
 			printf "Conns: %5d/%d   " $aconn $mconn 
 	     		printf "%-17s" "History: $pretty"
 			#printf "%$((COLUMNS-169))s" " "
