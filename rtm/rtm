@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.7
+VERSION=1.8.8
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -569,14 +569,12 @@ send_command()
 
 global_counters()
 {
-	echo "show global status like 'threads_connected';" >&101
-	read -t 1 -r -u 100 tc
-	read -t 1 -r -u 100 tc
-	echo $tc | tr -d "\r" >> $snapfile
-	echo " show global variables like 'max_connections';" >&101
-	read -t 1 -r -u 100 mc
-	read -t 1 -r -u 100 mc
-	echo $mc | tr -d "\r" >> $snapfile
+	send_command "show global status like 'threads_connected'" 
+	read_results $tmpf_gc
+	grep ^Threads_connected $tmpf_gc | tr -d "\r" >> $snapfile
+	send_command "show global variables like 'max_connections'"
+	read_results $tmpf_gc
+	grep ^max_connections $tmpf_gc | tr -d "\r" >> $snapfile
 }
 
 localhost=0
@@ -590,11 +588,12 @@ lockingonly=no
 waitingonly=no
 tmpf=/tmp/rtw.$$
 tmpf_proc=/tmp/rtw.proc.$$
+tmpf_gc=/tmp/rtw.gc.$$
 scrh_tmpf=/tmp/rtw_sh.$$
 scrb_tmpf=/tmp/rtw_sb.$$
 snapfile=/tmp/rtw.sn.$$
 outfile=/tmp/rtw.of.$$
-trap 'rm -f $tmpf $tmpf_proc $scrh_tmpf $scrb_tmpf $snapfile $outfile; kill $coproc_pid 2>/dev/null' 0
+trap 'rm -f $tmpf $tmpf_proc $scrh_tmpf $scrb_tmpf $snapfile $outfile $tmpf_gc; kill $coproc_pid 2>/dev/null' 0
 
 init_terminal
 parse_arguments $*
