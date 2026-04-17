@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.10
+VERSION=1.8.11
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -251,7 +251,8 @@ parse_arguments()
 	arg_snap_dir="/tmp"
 	arg_ask_pass=0
 	arg_skip_cpu=0
-	argl=$(getopt -o x -u -l"help,tag:,quiet,skip-cpu,logfile:,interval:,kill:,filter-by-user:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
+	arg_osx=0
+	argl=$(getopt -o x -u -l"help,tag:,quiet,skip-cpu,osx,logfile:,interval:,kill:,filter-by-user:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
 	[ -s $tmpf ] && usage
 	argr=($argl)
 	i=0
@@ -297,6 +298,9 @@ parse_arguments()
 				;;
 			'--skip-cpu')
 				arg_skip_cpu=1
+				;;
+			'--osx')
+				arg_osx=1
 				;;
 			'--processlist')
 				check_terminal_width
@@ -501,6 +505,8 @@ usage()
 	printf -- "--logfile\t\tlog activity about snapshots and kills\n"
 	printf -- "--quiet\t\t\tsuppresses output; useful with --kill\n"
 	printf -- "--tag\t\t\tdisplay tag at top of screen instead of hostname\n"
+	printf -- "--skip-cpu\t\trtm is running remotely, no cpu info\n"
+	printf -- "--osx\t\t\trtm is running on Apple OSX\n"
 	printf -- "--help\t\t\tthis help\n"
 	printf "\n"
 	exit 1
@@ -534,7 +540,10 @@ coproc_setup()
 	[ "$arg_use_file" != "" ] && return
 	while true
 	do
-		coproc mysqlc { script /dev/null mysql -ANrsf $connstr 2>&1; }
+		case "$arg_osx" in
+			0) coproc mysqlc { script -c "mysql -ANrsf $connstr 2>&1" /dev/null; };;
+			1) coproc mysqlc { script /dev/null mysql -ANrsf $connstr 2>&1; };;
+		esac
 		sleep 4
 		if [ "${mysqlc[1]}" != "" ]
 		then
