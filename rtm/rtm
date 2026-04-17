@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.9
+VERSION=1.8.10
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -557,23 +557,23 @@ read_results()
 			echo "$row"
 			#echo "DEBUG READ $row" 1>&2
 		done | tr -d "\r" >> $1
-		tail $1 | fgrep -q "rtm_done" && break
+		tail $1 | fgrep -q "rtm_$2" && break
 	done
 }
 
 send_command()
 {
 	echo "$1;" >&101
-	echo "-- rtm_done" >&101
+	echo "-- rtm_$2" >&101
 }
 
 global_counters()
 {
-	send_command "show global status like 'threads_connected'" 
-	read_results $tmpf_gc
+	send_command "show global status like 'threads_connected'" thrc
+	read_results $tmpf_gc thrc
 	grep ^Threads_connected $tmpf_gc | tr -d "\r" >> $snapfile
-	send_command "show global variables like 'max_connections'"
-	read_results $tmpf_gc
+	send_command "show global variables like 'max_connections'" maxc
+	read_results $tmpf_gc maxc
 	grep ^max_connections $tmpf_gc | tr -d "\r" >> $snapfile
 }
 
@@ -612,14 +612,14 @@ do
 	else
 		wc=0
 		check_terminal_width
-		send_command "show engine innodb status"
-		read_results $outfile
+		send_command "show engine innodb status" engine
+		read_results $outfile engine
 		cat $outfile | tee $snapfile | $grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
 		global_counters
 		if [ "$processlist" = "yes" ]
 		then
-			send_command "select id, replace(replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', ''), '\t', '') from information_schema.processlist;"
-			read_results $tmpf_proc
+			send_command "select id, replace(replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', ''), '\t', '') from information_schema.processlist;" proc
+			read_results $tmpf_proc proc
 		fi
 		if [ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ]
 		then
