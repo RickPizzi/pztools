@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.6
+VERSION=1.8.7
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -538,7 +538,7 @@ coproc_setup()
 		sleep 4
 		if [ "${mysqlc[1]}" != "" ]
 		then
-			coproc_pid=$(ps -A -o pid,ppid | grep " $$$" | cut -d" " -f 1)
+			coproc_pid=$(ps -A -o pid,ppid | grep " $mysqlc_PID$" | cut -d" " -f 1)
 			exec 100>&${mysqlc[0]} 101>&${mysqlc[1]}
 			break
 		else
@@ -594,7 +594,7 @@ scrh_tmpf=/tmp/rtw_sh.$$
 scrb_tmpf=/tmp/rtw_sb.$$
 snapfile=/tmp/rtw.sn.$$
 outfile=/tmp/rtw.of.$$
-trap 'rm -f $tmpf $tmpf_proc $scrh_tmpf $scrb_tmpf $snapfile $outfile; kill $coproc_pid' 0
+trap 'rm -f $tmpf $tmpf_proc $scrh_tmpf $scrb_tmpf $snapfile $outfile; kill $coproc_pid 2>/dev/null' 0
 
 init_terminal
 parse_arguments $*
