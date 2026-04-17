@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.2
+VERSION=1.8.3
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -566,6 +566,18 @@ send_command()
 	echo "-- rtm_done" >&101
 }
 
+global_counters()
+{
+	echo "show global status like 'threads_connected';" >&101
+	read -t 1 -r -u 100 tc
+	read -t 1 -r -u 100 tc
+	echo $tc | tr -d "\r" >> $snapfile
+	echo " show global variables like 'max_connections';" >&101
+	read -t 1 -r -u 100 mc
+	read -t 1 -r -u 100 mc
+	echo $mc | tr -d "\r" >> $snapfile
+}
+
 localhost=0
 refresh=3
 hdrmsg=0
@@ -603,6 +615,7 @@ do
 		send_command "show engine innodb status"
 		read_results $outfile
 		cat $outfile | tee $snapfile | $grep -zoPa "(?s)(?<=LIST OF TRANSACTIONS FOR EACH SESSION\:)(.*)(?=FILE I/O)" | grep -av "^mysql tables in use" | egrep -aA2 "^---T(.*)ACTIVE" | egrep -a "ACTIVE|row lock|thread id"  > $tmpf
+		global_counters
 		if [ "$processlist" = "yes" ]
 		then
 			send_command "select id, replace(replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', ''), '\t', '') from information_schema.processlist;"
@@ -612,14 +625,6 @@ do
 		then
 			top -b -d 0.1 | grep -m 1 Cpu >> $snapfile 
 		fi
-		echo "show global status like 'threads_connected';" >&101
-		read -t 1 -r -u 100 tc
-		read -t 1 -r -u 100 tc
-		echo $tc | tr -d "\r" >> $snapfile
-		echo " show global variables like 'max_connections';" >&101
-		read -t 1 -r -u 100 mc
-		read -t 1 -r -u 100 mc
-		echo $mc | tr -d "\r" >> $snapfile
 	fi
 	if [ -s $tmpf ]
 	then 
