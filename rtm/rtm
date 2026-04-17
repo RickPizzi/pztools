@@ -719,7 +719,7 @@ do
 			then
 				if [ "$processlist" = "yes" ]
 				then
-					p_info=$(grep "^$t_thread_id\t" $tmpf_proc | cut -f 2 | tr -s " ")
+					p_info=$(grep "^$t_thread_id\s" $tmpf_proc | cut -f 2 | tr -s " ")
 					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s %s$term_reset\n" "$t_ts" $t_id $h $m $s "$p_locks" "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra" "$p_info"
 				else
 					printf "$t_ts_bold%-8s %17s %2d:%02d:%02d %6s %6s %10d %-16s %-16.16s %-20.20s$term_reset\n" "$t_ts" $t_id $h $m $s "$p_locks" "$p_undos" $t_thread_id "$t_ipaddr" "$t_user" "$t_extra"
