@@ -2,20 +2,22 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.1
+VERSION=1.8.2
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
 
 prettify()
 {
-        if [ $1 -lt 1000000 ]
+	v=$1
+	[ "$v" = "" ] && v=0
+        if [ $v -lt 1000000 ]
         then
-                pretty=$1
+                pretty=$v
                 return
         fi
-        mi=$(($1/1000000))
-        r=$(($1-mi*1000000))
+        mi=$(($v/1000000))
+        r=$(($v-mi*1000000))
         d=$((r/10000))
 	[ $d -lt 10 ] && d="0$d"
 	pretty="$mi.${d}M"
