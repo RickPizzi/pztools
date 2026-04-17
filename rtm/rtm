@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.11
+VERSION=1.8.12
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -627,7 +627,7 @@ do
 		global_counters
 		if [ "$processlist" = "yes" ]
 		then
-			send_command "select id, replace(replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', ''), '\t', '') from information_schema.processlist;" proc
+			send_command "select id, replace(replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', ''), '\t', '') from information_schema.processlist" proc
 			read_results $tmpf_proc proc
 		fi
 		if [ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ]
