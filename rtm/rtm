@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.12
+VERSION=1.8.13
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -538,11 +538,12 @@ screen_update()
 coproc_setup()
 {
 	[ "$arg_use_file" != "" ] && return
+	export MYSQL_PWD="$arg_password"
 	while true
 	do
 		case "$arg_osx" in
-			0) coproc mysqlc { script -c "mysql -ANrsf $connstr 2>&1" /dev/null; };;
-			1) coproc mysqlc { script /dev/null mysql -ANrsf $connstr 2>&1; };;
+			0) coproc mysqlc { script -c "mysql -ANrsf -h $arg_host -u $arg_user 2>&1" /dev/null; };;
+			1) coproc mysqlc { script /dev/null mysql -ANrsf -h $arg_host -u $arg_user 2>&1; };;
 		esac
 		sleep 4
 		if [ "${mysqlc[1]}" != "" ]
@@ -627,7 +628,7 @@ do
 		global_counters
 		if [ "$processlist" = "yes" ]
 		then
-			send_command "select id, replace(replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', ''), '\t', '') from information_schema.processlist" proc
+			send_command "select id, replace(replace(replace(left(info, 68 + $((COLUMNS-PROCLIST_MIN_TERM_SIZE))), '\n', ' '), '\r', ''), '\t', ' ') from information_schema.processlist" proc
 			read_results $tmpf_proc proc
 		fi
 		if [ $localhost -eq 1 -a $arg_skip_cpu -eq 0 ]
