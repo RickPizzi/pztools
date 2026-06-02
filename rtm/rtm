@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.14
+VERSION=1.8.15
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -221,7 +221,7 @@ get_nr()
 #	[ "$arg_use_file" = "" ] && arg_nr=$(echo "select 1 - @@skip_name_resolve" | mysql -ANr $connstr 2>/dev/null)
 #	if [ $arg_nr -eq 0 ]
 #	then
-		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._]*)(\s*)([A-Za-z0-9_\-]*)\s?(.*)$/\2+\5+\7+\8@/g"
+		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._]*)(\s*)([A-Za-z0-9_\.\-]*)\s?(.*)$/\2+\5+\7+\8@/g"
 		localhost_edit="s/no_match__g//"
 #	else
 #		parser="s/^(MySQL|MariaDB) thread id ([0-9]*), OS thread handle ([0-9]*), query id ([0-9]*) ([A-Za-z0-9\._-]*) ([A-Za-z0-9\._]*) ([A-Za-z0-9_\-]*)\s?(.*)$/\2+\6+\7+\8@/g"
