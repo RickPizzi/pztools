@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.8"
+BM_VERSION="4.9.9"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -467,7 +467,7 @@ validate_point_in_time()
 	fi
 	echo "Requested point-in-time found in backup piece $target_binlog_backup_id."
 	[ "$2" = "" ] && confirm_operation
-	[ "$target_binlog_backup_id" != "$uuid" ] && point_in_time=1
+	point_in_time=1
 }
 
 pit_not_present()
