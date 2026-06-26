@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.9"
+BM_VERSION="4.9.10"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2822,6 +2822,7 @@ pit_xid()
 {
 	replication_credentials
 	[ "$repl_user" = "" ] && return
+	[ "$repl_password" = "" ] && return
 	build_master_cmd
 	target_gtid=$(which_gtid)
 	[ $target_gtid -eq 0 ] && return
