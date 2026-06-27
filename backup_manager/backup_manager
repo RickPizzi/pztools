@@ -594,9 +594,10 @@ incr_check_position()
 	then
 		if [ "$requested_binlog_file" != "" ]
 		then
-			this_binlog_file=$(echo "select binlog_file from backup_history where uuid = '$id';" | dbquery $DB)
-			[ "$this_binlog_file" \> "$requested_binlog_file" ] && return 0
-			if [ "$this_binlog_file" = "$requested_binlog_file" ]
+			rbf=${requested_binlog_file##*.}
+			this=$(echo "select replace(binlog_file, rtrim(binlog_file, replace(binlog_file, '.', '' ) ), '') from backup_history where uuid = '$id';" | dbquery $DB)
+			[ $this -gt $rbf ] && return 0
+			if [ $this -eq $rbf ]
 			then
 				this_binlog_position=$(echo "select binlog_position from backup_history where uuid = '$id';" | dbquery $DB)
 				[ $this_binlog_position -gt $requested_binlog_position ] && return 0
@@ -1890,7 +1891,9 @@ extract_binlog_piece()
 	last_b=$(basename $(ls -1 $bxfolder/* | tail -1))
 	if [ "$requested_binlog_file" != "" ]
 	then
-		[ "$last_b" \> "$requested_binlog_file" ] && last_b=$requested_binlog_file
+		rbf=${requested_binlog_file##*.}
+		lbf=${last_b##*.}
+		[ $lbf -gt $rbf ] && last_b=$requested_binlog_file
 	else
 		scan_binlog_archive
 		if [ "$last_b" = "" ]
@@ -1900,11 +1903,14 @@ extract_binlog_piece()
  			return 1
  		fi
 	fi
-	[ "$bf_start_file" \> "$first_b" ] && first_b=$bf_start_file
+	fbf=${first_b##*.}
+	bsf=${bf_start_file##*.}
+	[ $bsf -gt $fbf ] && first_b=$bf_start_file
 	echo -n "applying binlog files from $first_b to $last_b.."
 	for bf in $(ls $bxfolder)
 	do
-		[ "$bf_start_file" \> "$bf" ] && continue
+		cbf=${bf##*.}
+		[ $bsf -gt $cbf ] && continue
 		echo -n "."
 		if [ "$bf" != "$requested_binlog_file" ]
 		then
