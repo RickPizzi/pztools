@@ -481,22 +481,22 @@ check_pit_availability()
 {
 	if [ "$requested_binlog_file" != "" ]
 	then
-		bf=$(echo "select binlog_file from backup_history where uuid = '$uuid';" | dbquery $DB)
-		bp=$(echo "select binlog_position from backup_history where uuid = '$uuid';" | dbquery $DB)
-		if [ "$bf" \> "$requested_binlog_file" ]
+		rbf=${requested_binlog_file##*.}
+		bf=$(echo "select replace(binlog_file, rtrim(binlog_file, replace(binlog_file, '.', '' ) ), '') from backup_history where uuid = '$uuid';" | dbquery $DB)
+		if [ $bf -gt $rbf ]
 		then
 			pit_not_present
 			exit 1
 		fi
-		if [ "$bf" = "$requested_binlog_file" ]
+		if [ $bf -eq $rbf ]
 		then
+			bp=$(echo "select binlog_position from backup_history where uuid = '$uuid';" | dbquery $DB)
 			if [ $bp -gt $requested_binlog_position ]
 			then
 				pit_not_present
 				exit 1
 			fi
 		fi
-		rbf=${requested_binlog_file##*.}
 		for bb_id in $(echo "select uuid from backup_history where ref_full_backup = '$uuid' and backup_tool = 'binlogs' and status = 0 order by start_time asc;" | dbquery $DB)
 		do
 			bl=$(echo "select replace(binlog_last, rtrim(binlog_last, replace(binlog_last, '.', '' ) ), '') from backup_history where uuid = '$bb_id';" | dbquery $DB)
