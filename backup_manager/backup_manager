@@ -391,11 +391,11 @@ apply_binlogs()
 	fi
 	[ ! -d $bxfolder ] && mkdir $bxfolder
 	cd $bxfolder
-	wanted_seqno=${bf_start_file:(-6)}
+	wanted_seqno=${bf_start_file##*.}
         scan_start=$(echo "select start_time from backup_history where uuid = '$uuid';" | dbquery $DB)
         for bp in $(echo "select uuid from backup_history where backup_tool = 'binlogs' and ref_full_backup = '$bf_parent' and start_time > '$scan_start' order by start_time asc;" | dbquery $DB)
 	do
-		last_seqno=$(echo "select substr(binlog_last, -6) from backup_history where uuid = '$bp';" | dbquery $DB)
+		last_seqno=$(echo "select replace(binlog_last, rtrim(binlog_last, replace(binlog_last, '.', '' ) ), '') from backup_history where uuid = '$bp';" | dbquery $DB)
 		[ $last_seqno -lt $wanted_seqno ] && continue
 		echo "extracting binlog backup $bp"
 		state_update "applying binlog backup $bp"
@@ -496,10 +496,11 @@ check_pit_availability()
 				exit 1
 			fi
 		fi
+		rbf=${requested_binlog_file##*.}
 		for bb_id in $(echo "select uuid from backup_history where ref_full_backup = '$uuid' and backup_tool = 'binlogs' and status = 0 order by start_time asc;" | dbquery $DB)
 		do
-			bl=$(echo "select binlog_last from backup_history where uuid = '$bb_id';" | dbquery $DB)
-			if [ "$bl" \> "$requested_binlog_file" -o "$bl" = "$requested_binlog_file" ]
+			bl=$(echo "select replace(binlog_last, rtrim(binlog_last, replace(binlog_last, '.', '' ) ), '') from backup_history where uuid = '$bb_id';" | dbquery $DB)
+			if [ $bl -ge $rbf ]
 			then
 				target_binlog_backup_id=$bb_id
 				return
@@ -507,8 +508,8 @@ check_pit_availability()
 		done
 		for bb_id in $(echo "select uuid from backup_history where ref_full_backup = '$uuid' and level = 1 and status = 0 order by start_time asc;" | dbquery $DB)
 		do
-			bl=$(echo "select binlog_file from backup_history where uuid = '$bb_id';" | dbquery $DB)
-			if [ "$bl" \> "$requested_binlog_file" -o "$bl" = "$requested_binlog_file" ]
+			bl=$(echo "select replace(binlog_file, rtrim(binlog_file, replace(binlog_file, '.', '' ) ), '') from backup_history where uuid = '$bb_id';" | dbquery $DB)
+			if [ $bl -ge $rbf ]
 			then
 				target_binlog_backup_id=$bb_id
 				return
