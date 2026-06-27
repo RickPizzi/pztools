@@ -3019,9 +3019,11 @@ build_binlog_list()
 {
 	ena=0
 	binlog_list=""
+	bsn=${binlog_start##*.}
 	for binlog in $(ls ${binlog_base}* | grep -v index | sort -n -t . -k 2)
 	do
-		[ "${binlog##*/}" \> "$binlog_start" -o "${binlog##*/}" = "$binlog_start" ] && ena=1
+		cbn=${binlog##*.}
+		[ $cbn -ge $bsn ] && ena=1
 		[ $ena -eq 0 ] && continue
 		binlog_list="$binlog_list ${binlog##*/}"
 	done
