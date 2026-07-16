@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.12"
+BM_VERSION="4.9.13"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2111,13 +2111,13 @@ perform_maria_backup()
 		0)
 			$mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
-			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup__checkpoints $target/checkpoints/mariabackup 2>/dev/null
+			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
 		1)
 			cp $target/checkpoints/mariabackup/* /tmp 2>/dev/null
 			$mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
-			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup__checkpoints $target/checkpoints/mariabackup 2>/dev/null
+			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
 	esac
 	get_lsn
@@ -2173,7 +2173,7 @@ perform_mariaunpacked_backup()
 		0)
 			$mariabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile &
 			run_with_timeout
-			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariaunpacked 2>/dev/null
+			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
 		1)	# NOT IMPLEMENTABLE
 			;;
@@ -2896,7 +2896,7 @@ check_slave_status()
 
 get_lsn()
 {
-	lsn=$(fgrep last_lsn $target/checkpoints/$tool/xtrabackup_checkpoints 2>/dev/null | tr -d " " | cut -d"=" -f 2)
+	lsn=$(fgrep last_lsn $target/checkpoints/$tool/*_checkpoints 2>/dev/null | tr -d " " | cut -d"=" -f 2)
 }
 
 build_config()
@@ -3028,7 +3028,7 @@ build_binlog_list()
 	ena=0
 	binlog_list=""
 	bsn=${binlog_start##*.}
-	for binlog in $(ls ${binlog_base}* | grep -v index | sort -n -t . -k 2)
+	for binlog in $(find $(dirname $binlog_base) -maxdepth 1 -type f | egrep -v "index$|idx$" | sort -n -t . -k 2)
 	do
 		cbn=${binlog##*.}
 		[ $cbn -ge $bsn ] && ena=1
