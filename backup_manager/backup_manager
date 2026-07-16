@@ -2111,13 +2111,13 @@ perform_maria_backup()
 		0)
 			$mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
-			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
+			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup__checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
 		1)
-			cp $target/checkpoints/mariabackup/xtrabackup_checkpoints /tmp 2>/dev/null
+			cp $target/checkpoints/mariabackup/* /tmp 2>/dev/null
 			$mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			run_with_timeout
-			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
+			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup__checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
 	esac
 	get_lsn
