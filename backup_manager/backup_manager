@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.11"
+BM_VERSION="4.9.12"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2455,15 +2455,16 @@ build_slave()
 		[ "$cfg" != "" ] && sock_str="-S$cfg" || sock_str=""
 		sleep 10
 		galera=$(echo "select @@wsrep_on" | ssh $1 "$mysqlcli -ANr -u $user $sock_str $pass_str" 2>/dev/null)
+		ssh -q $1 test $2/xtrabackup_binlog_info && bi=xtrabackup_binlog_info || bi=mariadb_backup_binlog_info
 		( 
 			[ "$galera" = "" ] && echo "RESET MASTER;"
 			echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass';"
 			if [ "$BM_FILE_POS" != "" -a "$BM_CLEAR_GTID_POS" = "" ]
 			then
-				chgc=$(ssh -q $1 cat $2/xtrabackup_binlog_info | sed -re "s/^(.*)\.([0-9]*)\s([0-9]*)\s(.*)$/MASTER_LOG_FILE='\1.\2', MASTER_LOG_POS=\3/")
+				chgc=$(ssh -q $1 cat $2/$bi | sed -re "s/^(.*)\.([0-9]*)\s([0-9]*)\s(.*)$/MASTER_LOG_FILE='\1.\2', MASTER_LOG_POS=\3/")
 				echo "CHANGE MASTER TO $chgc;"
 			else
-				gtid=$(ssh -q $1 cat $2/xtrabackup_binlog_info | sed -re "s/^(.*)\s+(.*)\s+(.*)/\3/")
+				gtid=$(ssh -q $1 cat $2/$bi | sed -re "s/^(.*)\s+(.*)\s+(.*)/\3/")
 				if [ "$gtid" = "" -a "$BM_OVERRIDE_GTID_POS" = "" -a "$BM_CLEAR_GTID_POS" = "" ]
 				then
 					echo "Unable to get GTID info for replication. Are GTIDs enabled on backup server?"
