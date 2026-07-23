@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.9.14"
+BM_VERSION="4.9.15"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1206,8 +1206,7 @@ update_backup_status()
 	case_insens=$(mysql_variable lower_case_table_names)
 	case "$tool" in
 		'mariaunpacked')
-			echo "update backup_history set last_lsn = $lsn, case_insensitive = $case_insens, backup_size = $(du -bs $tt | cut -f 1) where uuid = '$backup_id';" | dbquery $DB
-			pit_xid
+			echo "update backup_history set case_insensitive = $case_insens, backup_size = $(du -bs $tt | cut -f 1) where uuid = '$backup_id';" | dbquery $DB
 			;;
 		'mariabackup'| 'xtrabackup' )
 			echo "update backup_history set last_lsn = $lsn, case_insensitive = $case_insens, backup_size = $(stat -c %s $tt/$fn) where uuid = '$backup_id';" | dbquery $DB
