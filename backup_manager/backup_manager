@@ -1324,7 +1324,7 @@ perform_binlogs_backup()
 		then
 			tar cf - $binlog_list 2>$error_log | $compressor | $encryptor 2>/dev/null > $tt/$fn
 		else
-			tar cf - $binlog_list 2>$error_log | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn)
+			tar cf - $binlog_list 2>$error_log | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $(date +$dt_format)/$tool/$fn)
 		fi
 		if [ -s $error_log ]
 		then
@@ -2076,7 +2076,7 @@ perform_zsnapshot_backup()
 			then
 				zfs send ${snap_t:1}@$backup_id | $compressor | $encryptor > $tt/$fn 2>$aux_log
 			else
-				zfs send ${snap_t:1}@$backup_id | $compressor | $encryptor 2>$aux_log | $(printf "$uploader" $fn)
+				zfs send ${snap_t:1}@$backup_id | $compressor | $encryptor 2>$aux_log | $(printf "$uploader" $(date +$dt_format)/$tool/$fn)
 			fi
 			;;
 		1)
@@ -2084,7 +2084,7 @@ perform_zsnapshot_backup()
 			then
 				zfs send -i @$ref_full ${snap_t:1}@$backup_id | $compressor | $encryptor > $tt/$fn 2>$aux_log
 			else
-				zfs send -i @$ref_full ${snap_t:1}@$backup_id | $compressor | $encryptor 2>$aux_log | $(printf "$uploader" $fn)
+				zfs send -i @$ref_full ${snap_t:1}@$backup_id | $compressor | $encryptor 2>$aux_log | $(printf "$uploader" $(date +$dt_format)/$tool/$fn)
 			fi
 			;;
 	esac
@@ -2137,7 +2137,7 @@ perform_maria_backup()
 			then
 				$mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			else
-				$mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn)
+				$mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $(date +$dt_format)/$tool/$fn)
 			fi
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
@@ -2148,7 +2148,7 @@ perform_maria_backup()
 			then
 				$mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			else
-				$mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+				$mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $(date +$dt_format)/$tool/$fn) &
 			fi
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
@@ -2249,7 +2249,7 @@ perform_xtra_backup()
 			then
 				xtrabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			else
-				xtrabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+				xtrabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $(date +$dt_format)/$tool/$fn) &
 			fi
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/xtrabackup 2>/dev/null
@@ -2260,7 +2260,7 @@ perform_xtra_backup()
 			then
 				xtrabackup --backup $galera_str $kill_str --incremental-basedir=$target/checkpoints/xtrabackup --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 			else
-				xtrabackup --backup $galera_str $kill_str --incremental-basedir=$target/checkpoints/xtrabackup --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+				xtrabackup --backup $galera_str $kill_str --incremental-basedir=$target/checkpoints/xtrabackup --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $(date +$dt_format)/$tool/$fn) &
 			fi
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/xtrabackup 2>/dev/null
@@ -2327,7 +2327,7 @@ perform_smartdump_backup()
 	then
 		$smartdump  --dump --lock-timeout=30 --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str 2>$logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 	else
-		$smartdump  --dump --lock-timeout=30 --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str 2>$logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+		$smartdump  --dump --lock-timeout=30 --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str 2>$logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $(date +$dt_format)/$tool/$fn) &
 	fi
 	run_with_timeout
 	[ "$ro" = "1" ] && set_read_only 1
@@ -2354,7 +2354,7 @@ perform_mysqldump_backup()
 	then
 		$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host $port_str $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null > $tt/$fn &
 	else
-		$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host $port_str $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+		$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host $port_str $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $(date +$dt_format)/$tool/$fn) &
 	fi
 	run_with_timeout
 	update_backup_status
