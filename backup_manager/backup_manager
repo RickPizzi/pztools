@@ -1009,6 +1009,7 @@ parse_config()
 	grep -q "^uncompressor" $CONFIGFILE && uncompressor=$(grep "^uncompressor" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^encryptor" $CONFIGFILE && encryptor=$(grep "^encryptor" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^unencryptor" $CONFIGFILE && unencryptor=$(grep "^unencryptor" $CONFIGFILE | cut -d"=" -f2)
+	grep -q "^uploader" $CONFIGFILE && uploader=$(grep "^uploader" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^downloader" $CONFIGFILE && reader=$(grep "^downloader" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^purge_incomplete_backups" $CONFIGFILE && purge_incomplete=$(grep "^purge_incomplete_backups" $CONFIGFILE | cut -d"=" -f2)
 	grep -q "^expire_days" $CONFIGFILE && expire_days=$(grep "^expire_days" $CONFIGFILE | cut -d"=" -f2)
@@ -1078,7 +1079,16 @@ parse_config()
 			exit 1
 		fi
 	fi
-		[ "$BM_DOWNLOADER" != "" ] && reader=$BM_DOWNLOADER
+	if [ "$uploader" != "" ]
+	then
+		ct=$(which ${uploader/%\ */} 2>/dev/null)
+		if [ "$ct" = "" ]
+		then
+			echo "Uploader ${uploader/%\ */} not found, please install it."
+			exit 1
+		fi
+	fi
+	[ "$BM_DOWNLOADER" != "" ] && reader=$BM_DOWNLOADER
 	[ "$BM_SERVER_PATH" != "" ] && server_path=$BM_SERVER_PATH
 
 	lockfile=/tmp/backup_manager.lock
@@ -1310,7 +1320,12 @@ perform_binlogs_backup()
 		echo "Backing up binary log files" 
 		echo "Files in this backup: $binlog_list"
 		cd $(dirname $binlog_base)
-		tar cf - $binlog_list 2>$error_log | $compressor | $encryptor 2>/dev/null > $tt/$fn
+		if [ "$uploader" = "" ]
+		then
+			tar cf - $binlog_list 2>$error_log | $compressor | $encryptor 2>/dev/null > $tt/$fn
+		else
+			tar cf - $binlog_list 2>$error_log | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn)
+		fi
 		if [ -s $error_log ]
 		then
 			status=1
@@ -2057,10 +2072,20 @@ perform_zsnapshot_backup()
 	echo -n "Saving snapshot... "
 	case "$level" in
 		0)
-			zfs send ${snap_t:1}@$backup_id | $compressor | $encryptor > $tt/$fn 2>$aux_log
+			if [ "$uploader" = "" ]
+			then
+				zfs send ${snap_t:1}@$backup_id | $compressor | $encryptor > $tt/$fn 2>$aux_log
+			else
+				zfs send ${snap_t:1}@$backup_id | $compressor | $encryptor 2>$aux_log | $(printf "$uploader" $fn)
+			fi
 			;;
 		1)
-			zfs send -i @$ref_full ${snap_t:1}@$backup_id | $compressor | $encryptor > $tt/$fn 2>$aux_log
+			if [ "$uploader" = "" ]
+			then
+				zfs send -i @$ref_full ${snap_t:1}@$backup_id | $compressor | $encryptor > $tt/$fn 2>$aux_log
+			else
+				zfs send -i @$ref_full ${snap_t:1}@$backup_id | $compressor | $encryptor 2>$aux_log | $(printf "$uploader" $fn)
+			fi
 			;;
 	esac
 	if [ $? -ne 0 ]
@@ -2108,13 +2133,23 @@ perform_maria_backup()
 	[ $kill_query_time -gt 0 ] && kill_str="--kill-long-queries-timeout=$kill_query_time --kill-long-query-type=SELECT"
 	case $level in
 		0)
-			$mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			if [ "$uploader" = "" ]
+			then
+				$mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			else
+				$mariabackup --backup $galera_str $kill_str $limit_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn)
+			fi
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
 		1)
 			cp $target/checkpoints/mariabackup/* /tmp 2>/dev/null
-			$mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			if [ "$uploader" = "" ]
+			then
+				$mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			else
+				$mariabackup --backup $galera_str $kill_str $limit_str --incremental-basedir=$target/checkpoints/mariabackup --user=$user $sock_str $pass_str --parallel=$parallelism --extra-lsndir=/tmp --stream=xbstream --slave-info --ftwrl-wait-timeout=$BACKUP_LOCK_TIMEOUT --ftwrl-wait-threshold=999999 --target-dir=$tt 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+			fi
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints /tmp/mariadb_backup_checkpoints $target/checkpoints/mariabackup 2>/dev/null
 			;;
@@ -2210,13 +2245,23 @@ perform_xtra_backup()
 	[ $kill_query_time -gt 0 ] && kill_str="--kill-long-queries-timeout=$kill_query_time --kill-long-query-type=SELECT"
 	case $level in
 		0)
-			xtrabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			if [ "$uploader" = "" ]
+			then
+				xtrabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			else
+				xtrabackup --backup $galera_str $kill_str --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+			fi
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/xtrabackup 2>/dev/null
 			;;
 		1)
 			cp $target/checkpoints/xtrabackup/xtrabackup_checkpoints /tmp 2>/dev/null
-			xtrabackup --backup $galera_str $kill_str --incremental-basedir=$target/checkpoints/xtrabackup --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			if [ "$uploader" = "" ]
+			then
+				xtrabackup --backup $galera_str $kill_str --incremental-basedir=$target/checkpoints/xtrabackup --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+			else
+				xtrabackup --backup $galera_str $kill_str --incremental-basedir=$target/checkpoints/xtrabackup --user=$user $pass_str $sock_str --parallel=$parallelism --extra-lsndir=/tmp --target-dir=$tt --stream=xbstream --slave-info 2>> $logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+			fi
 			run_with_timeout
 			mv -f /tmp/xtrabackup_checkpoints $target/checkpoints/xtrabackup 2>/dev/null
 			;;
@@ -2278,7 +2323,12 @@ perform_smartdump_backup()
 	[ "$password" != "" ] && pass_str="--password $password"
 	[ "$socket" != "" ] && sock_str="--socket $socket"
 	[ "$port" != "" ] && port_str="--port $port"
-	$smartdump  --dump --lock-timeout=30 --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str 2>$logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+	if [ "$uploader" = "" ]
+	then
+		$smartdump  --dump --lock-timeout=30 --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str 2>$logfile | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+	else
+		$smartdump  --dump --lock-timeout=30 --threads $parallelism --host $host --user $user $pass_str $sock_str $port_str 2>$logfile | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+	fi
 	run_with_timeout
 	[ "$ro" = "1" ] && set_read_only 1
 	update_backup_status
@@ -2300,7 +2350,12 @@ perform_mysqldump_backup()
 	[ "$socket" != "" ] && sock_str="-S$socket"
 	[ "$port" != "" ] && port_str="-P$port"
 	[ $master_position -eq 1 ] && mp_str="--dump-slave=2"
-	$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host $port_str $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+	if [ "$uploader" = "" ]
+	then
+		$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host $port_str $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null > $tt/$fn &
+	else
+		$mysqldump --single-transaction --routines --triggers $mp_str --log-error=$logfile --max_allowed_packet=1G -h $host $port_str $sock_str -u $user $pass_str $dbstr | tee >(tail -1 > $dumptail) | $compressor | $encryptor 2>/dev/null | $(printf "$uploader" $fn) &
+	fi
 	run_with_timeout
 	update_backup_status
 	fire_webhook "$(tail -1 $logfile)"
@@ -2912,47 +2967,48 @@ build_config()
 		exit 1
 	fi
 	base64 -d << DOC_EOF | gzip -dc | sed -e "s/\$VERSION/v$BM_VERSION/" > $CONFIGFILE
-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
-45+OXr/+N+keomRFFwAA
+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
 DOC_EOF
 
 	echo "Created $CONFIGFILE. Please adjust it for your setup." 
