@@ -2,7 +2,7 @@
 #	RTM - Realtime Transactions Monitor for MariaDB
 #	(c) 2023,2024,2025,2026  Rick Pizzi, pizzi@leopardus.com
 #
-VERSION=1.8.15
+VERSION=1.8.16
 PROCLIST_MIN_TERM_SIZE=185
 HEADER_LINES=5
 LANG=
@@ -252,7 +252,7 @@ parse_arguments()
 	arg_ask_pass=0
 	arg_skip_cpu=0
 	arg_osx=0
-	argl=$(getopt -o x -u -l"help,tag:,quiet,skip-cpu,osx,logfile:,interval:,kill:,filter-by-user:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,socket:" -- $@ 2>$tmpf)
+	argl=$(getopt -o x -u -l"help,tag:,quiet,skip-cpu,osx,logfile:,interval:,kill:,filter-by-user:,snap-if-waiting-time:,snap-if-waiting-count:,snapshot-dir:,use-file:,locking-only,waiting-only,all-transactions,processlist,debug,name-resolve-on,host:,port:,user:,password:,ask-password,password-file:,socket:" -- $@ 2>$tmpf)
 	[ -s $tmpf ] && usage
 	argr=($argl)
 	i=0
@@ -351,6 +351,10 @@ parse_arguments()
 				check_for_arg
 				arg_password=${argr[$((i+1))]}
 				;;
+			'--password-file')
+				check_for_arg
+				arg_password_file=${argr[$((i+1))]}
+				;;
 			'--ask-password')
 				arg_ask_pass=1
 				;;
@@ -391,6 +395,12 @@ parse_arguments()
 		fi
 	fi
 	[ "$MYSQL_PWD" != "" ] && arg_password="$MYSQL_PWD"
+	if [ "$arg_password_file" != "" ]
+	then
+		arg_password=$(cat $arg_password_file)
+		[ "$arg_password" = "" ] && exit 1
+		rm $arg_password_file
+	fi
 	if [ "$arg_host" != "" ]
 	then
 		if [ "$arg_user" = "" ]
@@ -485,6 +495,7 @@ usage()
 	printf -- "--user\t\t\tuser for connection to target instance\n"
 	printf -- "--password\t\tpassword for connection to target instance\n"
 	printf -- "--ask-password\t\tpassword for connection to target will be asked on terminal\n"
+	printf -- "--password-file\tget password from this file\n"
 	printf -- "--socket\t\tsocket for connection to target instance\n"
 	printf -- "--interval\t\trefresh interval (1-60 seconds)\n"
 	printf -- "--all-transactions\tinclude just started transactions (lifetime < 1s)\n"
@@ -582,6 +593,13 @@ global_counters()
 	grep ^max_connections $tmpf_gc | tr -d "\r" >> $snapfile
 }
 
+cleanup()
+{
+	rm -f $tmpf $tmpf_proc $scrh_tmpf $scrb_tmpf $snapfile $outfile $tmpf_gc
+	kill $coproc_pid 2>/dev/null
+	rm -f $arg_password_file
+}
+
 localhost=0
 refresh=3
 hdrmsg=0
@@ -598,7 +616,7 @@ scrh_tmpf=/tmp/rtw_sh.$$
 scrb_tmpf=/tmp/rtw_sb.$$
 snapfile=/tmp/rtw.sn.$$
 outfile=/tmp/rtw.of.$$
-trap 'rm -f $tmpf $tmpf_proc $scrh_tmpf $scrb_tmpf $snapfile $outfile $tmpf_gc; kill $coproc_pid 2>/dev/null' 0
+trap cleanup 0
 
 init_terminal
 parse_arguments $*
