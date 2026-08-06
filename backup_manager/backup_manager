@@ -2432,17 +2432,17 @@ build_slave()
 	echo "*** Login to $1 successful"
 	if [ $setup_repl_only -eq 0 ]
 	then
-		ssh -q $1 test -d $2
+		ssh -q $ssh_port_opt $1 test -d $2
 		if [ $? -ne 0 ]
 		then
-			ssh -q $1 mkdir $2
+			ssh -q $ssh_port_opt $1 mkdir $2
 			if [ $? -ne 0 ]
 			then
 				echo "error creating target directory $2 on $1. Exiting."
 				exit 1
 			fi
 		fi
-		if [ "$(ssh -q $1 ls -1 $2)" != "" ]
+		if [ "$(ssh -q $ssh_port_opt $1 ls -1 $2)" != "" ]
 		then
 			echo "target directory $2 on target host $1 must be empty. Exiting."
 			exit 1
@@ -2458,13 +2458,13 @@ build_slave()
 			'mariabackup') rtool="mbstream"; ropts="-p $parallelism";;
 			'xtrabackup') rtool="xbstream"; ropts="";;
 		esac
-		ssh -q $1 id mysql >/dev/null 2>&1
+		ssh -q $ssh_port_opt $1 id mysql >/dev/null 2>&1
 		if [ $? -ne 0 ]
 		then
 			echo "ERROR: MariaDB not found. Please install MariaDB-server package on $1 and retry."
 			exit 1
 		fi
-		ssh -q $1 which $rtool >/dev/null 2>&1
+		ssh -q $ssh_port_opt $1 which $rtool >/dev/null 2>&1
 		if [ $? -ne 0 ]
 		then
 			echo "ERROR: $rtool is not installed on $1. Please install the $tool package there and retry."
@@ -2473,7 +2473,7 @@ build_slave()
 		echo "*** Streaming last good full backup ($uuid) to $1:$2"
 		r_uncompressor=$uncompressor
 		uncompressor="cat" 
-		do_restore $uuid - | ssh -q $1 "$r_uncompressor | $rtool $ropts -v -x -C $2"
+		do_restore $uuid - | ssh -q $ssh_port_opt $1 "$r_uncompressor | $rtool $ropts -v -x -C $2"
 		status=$(cat /tmp/build_slave.status)
 		if [ $status -ne 0 ]
 		then
@@ -2481,18 +2481,18 @@ build_slave()
 			exit 1
 		fi
 		echo "*** Preparing backup on $1"
-        	avail=$(ssh -q $1 "grep ^MemTotal /proc/meminfo" | sed -re "s/^MemTotal:(\s*)([0-9]*) kB/\2/")
+        	avail=$(ssh -q $ssh_port_opt $1 "grep ^MemTotal /proc/meminfo" | sed -re "s/^MemTotal:(\s*)([0-9]*) kB/\2/")
 		[ "$avail" = "" ] && avail=16777216
         	prepare_memory=$((avail/4))
 		[ "$tool" = "mariabackup" ] && open_files_limit
-		ssh -q $1 $tool --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$2
+		ssh -q $ssh_port_opt $1 $tool --prepare $limit_str --use-memory=${prepare_memory}K --target-dir=$2
 		echo "*** Fixing permissions on $1"
-		ssh -q $1 chown -R mysql:mysql $2
+		ssh -q $ssh_port_opt $1 chown -R mysql:mysql $2
 		echo "*** Starting MariaDB on $1"
-		ssh -q $1 service mysql start
+		ssh -q $ssh_port_opt $1 service mysql start
 		if [ $? -ne 0 ]
 		then
-			ssh -q $1 service mariadb start
+			ssh -q $ssh_port_opt $1 service mariadb start
 			if [ $? -ne 0 ]
 			then
 				echo "MariaDB failed to start. Stopping here."
@@ -2510,16 +2510,16 @@ build_slave()
 		[ "$cfg" != "" ] && sock_str="-S$cfg" || sock_str=""
 		sleep 10
 		galera=$(echo "select @@wsrep_on" | ssh $1 "$mysqlcli -ANr -u $user $sock_str $pass_str" 2>/dev/null)
-		ssh -q $1 test $2/xtrabackup_binlog_info && bi=xtrabackup_binlog_info || bi=mariadb_backup_binlog_info
+		ssh -q $ssh_port_opt $1 test $2/xtrabackup_binlog_info && bi=xtrabackup_binlog_info || bi=mariadb_backup_binlog_info
 		( 
 			[ "$galera" = "" ] && echo "RESET MASTER;"
 			echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass';"
 			if [ "$BM_FILE_POS" != "" -a "$BM_CLEAR_GTID_POS" = "" ]
 			then
-				chgc=$(ssh -q $1 cat $2/$bi | sed -re "s/^(.*)\.([0-9]*)\s([0-9]*)\s(.*)$/MASTER_LOG_FILE='\1.\2', MASTER_LOG_POS=\3/")
+				chgc=$(ssh -q $ssh_port_opt $1 cat $2/$bi | sed -re "s/^(.*)\.([0-9]*)\s([0-9]*)\s(.*)$/MASTER_LOG_FILE='\1.\2', MASTER_LOG_POS=\3/")
 				echo "CHANGE MASTER TO $chgc;"
 			else
-				gtid=$(ssh -q $1 cat $2/$bi | sed -re "s/^(.*)\s+(.*)\s+(.*)/\3/")
+				gtid=$(ssh -q $ssh_port_opt $1 cat $2/$bi | sed -re "s/^(.*)\s+(.*)\s+(.*)/\3/")
 				if [ "$gtid" = "" -a "$BM_OVERRIDE_GTID_POS" = "" -a "$BM_CLEAR_GTID_POS" = "" ]
 				then
 					echo "Unable to get GTID info for replication. Are GTIDs enabled on backup server?"
@@ -2545,9 +2545,9 @@ build_slave()
 				echo "CHANGE MASTER TO MASTER_USE_GTID=slave_pos;"
 				echo "START SLAVE;"
 			fi
-		) | ssh -q $1 "tee /tmp/bm.change_master | $mysqlcli -ANr -u $user $sock_str $pass_str" || build_slave_failure $*
+		) | ssh -q $ssh_port_opt $1 "tee /tmp/bm.change_master | $mysqlcli -ANr -u $user $sock_str $pass_str" || build_slave_failure $*
 		sleep 10
-		success=$(echo "show slave status\G" | ssh -q $1 $mysqlcli -Ar -u $user $sock_str $pass_str | grep 'Running:' | fgrep -c Yes)
+		success=$(echo "show slave status\G" | ssh -q $ssh_port_opt $1 $mysqlcli -Ar -u $user $sock_str $pass_str | grep 'Running:' | fgrep -c Yes)
 		if [ "$success" = "2" ]
 		then
 			echo "*** Slave started successfully!"
@@ -2565,7 +2565,7 @@ build_slave_failure()
 
 config_lookup()
 {
-	cfg=$(ssh -q $1 "find /etc/my* -type f -name \*.cnf | xargs grep -rh ^$2" | sort | uniq | tr -d "[ \t]" | cut -d"=" -f 2)
+	cfg=$(ssh -q $ssh_port_opt $1 "find /etc/my* -type f -name \*.cnf | xargs grep -rh ^$2" | sort | uniq | tr -d "[ \t]" | cut -d"=" -f 2)
 	if [ $(echo "$cfg" | wc -w) -gt 1 ]
 	then
 		echo "ERROR: found multiple config values for $2!"
@@ -2855,12 +2855,12 @@ ssh_setup()
 			exit 1
 		fi
 	fi
-	ssh -oPasswordAuthentication=no -q $1 true
+	ssh -oPasswordAuthentication=no $ssh_port_opt -q $1 true
 	if [ $? -ne 0 ]
 	then
 		echo "*** Setting up ssh"
 		echo "Setting up public/private key authentication. Please enter $targethost password."
-		cat $HOME/.ssh/id_rsa.pub | ssh -tq $1 "mkdir .ssh 2>/dev/null; chmod 755 .ssh; cat >> .ssh/authorized_keys; chmod 644 .ssh/authorized_keys"
+		cat $HOME/.ssh/id_rsa.pub | ssh -tq $ssh_port_opt $1 "mkdir .ssh 2>/dev/null; chmod 755 .ssh; cat >> .ssh/authorized_keys; chmod 644 .ssh/authorized_keys"
 		if [ $? -ne 0 ]
 		then
 			echo "error setting up public/private key pair. Exiting."
@@ -2868,7 +2868,7 @@ ssh_setup()
 			exit 1
 		fi
 	fi
-	ssh -q $1 true
+	ssh -q $ssh_port_opt $1 true
 	if [ $? -ne 0 ]
 	then
 		echo "ssh connection to $1 was not successful. Exiting."
