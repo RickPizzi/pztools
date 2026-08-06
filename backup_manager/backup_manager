@@ -1573,12 +1573,14 @@ convert_incr_to_full()
 
 do_remote_restore()
 {
+	[ "$BM_SSH_KEY" != "" ] && ssh_key_opt="-i $BM_SSH_KEY"
+	[ "$BM_SSH_PORT" != "" ] && ssh_port_opt="-p $BM_SSH_PORT"
 	while true
 	do
 		echo -n "Please enter hostname or IP address of the remote restore target: "
 		read target_host
 		[ "$target_host" = "" ] && continue
-		ssh -oConnectTimeout=10 root@$target_host true && break
+		ssh -oConnectTimeout=10 $ssh_port_opt $ssh_key_opt root@$target_host true && break
 		echo
 		echo "That didn't work."
 		echo "Please make sure you entered the correct information, and ssh keypair authentication is set up properly."	
@@ -1601,8 +1603,6 @@ do_remote_restore()
 	else    
 		backup_path="$BM_BACKUP_PATH"
 	fi      
-	[ "$BM_SSH_KEY" != "" ] && ssh_key_opt="-i $BM_SSH_KEY"
-	[ "$BM_SSH_PORT" != "" ] && ssh_port_opt="-p $BM_SSH_PORT"
 	ssh="ssh -q $ssh_key_opt $ssh_port_opt -oStrictHostKeyChecking=no root@$target_host"
 	local_remote="$ssh"
 	[ "$ulimit" = "" ] && ulimit=100000
