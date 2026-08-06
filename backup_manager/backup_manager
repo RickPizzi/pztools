@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.10.1"
+BM_VERSION="4.10.2"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1602,7 +1602,8 @@ do_remote_restore()
 		backup_path="$BM_BACKUP_PATH"
 	fi      
 	[ "$BM_SSH_KEY" != "" ] && ssh_key_opt="-i $BM_SSH_KEY"
-	ssh="ssh -q $ssh_key_opt -oStrictHostKeyChecking=no root@$target_host"
+	[ "$BM_SSH_PORT" != "" ] && ssh_port_opt="-p $BM_SSH_PORT"
+	ssh="ssh -q $ssh_key_opt $ssh_port_opt -oStrictHostKeyChecking=no root@$target_host"
 	local_remote="$ssh"
 	[ "$ulimit" = "" ] && ulimit=100000
 	replication_credentials
