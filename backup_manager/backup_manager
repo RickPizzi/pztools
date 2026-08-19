@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.10.2"
+BM_VERSION="4.10.3"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1126,8 +1126,10 @@ server_check()
 {
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
+	[ "$host" != "" ] && host_str="-h $host"
+	[ "$port" != "" ] && port_str="-P $port"
 	find_util mysqladmin
-        $util -u $user $sock_str $pass_str ping >$aux_log 2>&1
+        $util -u $user $host_str $port_str $sock_str $pass_str ping >$aux_log 2>&1
 	if [ $? -ne 0 ]
 	then
 		echo
@@ -1147,7 +1149,9 @@ mysql_variable()
 {
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
-	echo "select @@$1" | mysql -ANr -u $user $sock_str $pass_str
+	[ "$host" != "" ] && host_str="-h $host"
+	[ "$port" != "" ] && port_str="-P $port"
+	echo "select @@$1" | mysql -ANr -u $user $host_str $port_str $sock_str $pass_str
 }
 
 prepare_target()
