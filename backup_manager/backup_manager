@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.10.3"
+BM_VERSION="4.10.4"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1147,11 +1147,7 @@ server_check()
 
 mysql_variable()
 {
-	[ "$password" != "" ] && pass_str="-p$password"
-	[ "$socket" != "" ] && sock_str="-S$socket"
-	[ "$host" != "" ] && host_str="-h $host"
-	[ "$port" != "" ] && port_str="-P $port"
-	echo "select @@$1" | mysql -ANr -u $user $host_str $port_str $sock_str $pass_str
+	echo "select @@$1" | $mysql_cli
 }
 
 prepare_target()
@@ -1345,13 +1341,22 @@ perform_binlogs_backup()
 	fire_webhook "$(tail -1 $error_log)"
 }
 
+cli_init()
+{
+	[ "$password" != "" ] && pass_str="-p$password"
+	[ "$socket" != "" ] && sock_str="-S$socket"
+	[ "$host" != "" ] && host_str="-h $host"
+	[ "$port" != "" ] && port_str="-P $port"
+	mysql_cli="mysql -ANr -u $user $host_str $port_str $sock_str $pass_str"
+}
+
 save_binlog_info()
 {
 	[ $status -ne 0 ] && return
 	binlog_ts=$($mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER --stop-position $binlog_pos $(dirname $(mysql_variable log_bin_basename))/$binlog_file | fgrep "end_log_pos " | tail -1 | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+) ([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/0\2/")
 	case "$tool" in
 		'mariabackup'|'mariaunpacked'|'zsnapshot')
-			gtid_binlog_pos=$(echo "select BINLOG_GTID_POS('$binlog_file',$binlog_pos)" | mysql -ANr -u $user $sock_str $pass_str)
+			gtid_binlog_pos=$(echo "select BINLOG_GTID_POS('$binlog_file',$binlog_pos)" | $mysql_cli)
 			;;
 	esac
 }
@@ -2048,9 +2053,7 @@ perform_zsnapshot_backup()
 	echo "Performing backup using ZFS snapshot."
 	snap_t=$(stat -Lc %m $(mysql_variable datadir))
 	zfs_preflight_checks
-	[ "$password" != "" ] && pass_str="-p$password"
-	[ "$socket" != "" ] && sock_str="-S$socket"
-	coproc mysqlc { script -c "mysql -ANr -u $user $sock_str $pass_str 2>&1" /dev/null; }
+	coproc mysqlc { script -c "$mysql_cli 2>&1" /dev/null; }
 	backup_stage START
 	backup_stage FLUSH
 	backup_stage BLOCK_DDL
@@ -2063,7 +2066,7 @@ perform_zsnapshot_backup()
 		echo "Exiting."
 		clean_exit 1
 	fi
-	ms=$(echo "show master status" | mysql -ANr -u $user $sock_str $pass_str 2>$aux_log)
+	ms=$(echo "show master status" | $mysql_cli 2>$aux_log)
 	if [ "$ms" = "" ]
 	then
 		echo -n "ERROR: cannot obtain master status: "
@@ -2317,8 +2320,9 @@ set_read_only()
 {
 	[ "$password" != "" ] && pass_str="-p$password"
 	[ "$socket" != "" ] && sock_str="-S$socket"
+	[ "$host" != "" ] && host_str="-h $host"
 	[ "$port" != "" ] && port_str="-P$port"
-	echo "set global read_only=$1" | mysql -A -u $user $sock_str $pass_str $port_str
+	echo "set global read_only=$1" | $mysql_cli
 }
 
 perform_smartdump_backup()
@@ -2934,11 +2938,9 @@ disk_space()
 check_slave_status()
 {
 	[ "$tool" = "binlogs" ] && return
-	[ "$password" != "" ] && pass_str="-p$password"
-	[ "$socket" != "" ] && sock_str="-S$socket"
 	if [ "$hb_schema" != "" -a "$hb_table" != "" -a "$hb_stale_secs" != "" ]
 	then
-		hb_delay=$(echo "select timestampdiff(second, ts, now()) from $hb_schema.$hb_table order by ts desc limit 1" | mysql -ANr -u $user $sock_str $pass_str)
+		hb_delay=$(echo "select timestampdiff(second, ts, now()) from $hb_schema.$hb_table order by ts desc limit 1" | $mysql_cli)
 		w_msg="replication more than $hb_stale_secs behind"
 		if [ "$hb_delay" = "" ]
 		then
@@ -2948,7 +2950,7 @@ check_slave_status()
 		fi
 	else
 		w_msg="replication not running"
-		echo "show slave status\G" | mysql -Ar -u $user $sock_str $pass_str | grep -P "Slave_(.*)_Running:" | egrep -q "No|Connecting"
+		echo "show slave status\G" | mysql -Ar -u $user $host_str $port_str $sock_str $pass_str | grep -P "Slave_(.*)_Running:" | egrep -q "No|Connecting"
 	fi
 	if [ $? -eq 0 ]
 	then
@@ -3152,6 +3154,7 @@ fi
 [ "$1" = "help" ] && self_doc
 parse_config $*
 setup_db
+cli_init
 case "$1" in
 	'backup') 	
 		disk_space
