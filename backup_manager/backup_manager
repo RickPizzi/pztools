@@ -3115,7 +3115,7 @@ build_binlog_list()
 
 position_from_binlog()
 {
-	cat $1 | $ssh $mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER - 2>/dev/null | fgrep -v Warning 2>/dev/null | fgrep -C10 -m1 "Start: binlog" > $aux_log
+	cat $1 2>/dev/null | $ssh $mysqlbinlog --no-defaults --skip-annotate-row-events --base64-output=NEVER - 2>/dev/null | fgrep -v Warning 2>/dev/null | fgrep -C10 -m1 "Start: binlog" > $aux_log
 	lb_ts=$(grep "GTID " $aux_log | sed -re "s/^#([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)([0-9]+)\s+([0-9 ]*):([0-9]*):([0-9]*) server (.*)$/20\1\2-\3\4-\5\6 \7:\8:\9/" -e "s/( )([0-9]:)/ 0\2/")
 	[ "$lb_ts" = "" ] && lb_ts=$(grep "created " $aux_log | sed -re "s/^#([0-9][0-9])([0-9][0-9])([0-9][0-9])(\s*)([0-9]*):([0-9]*):([0-9]*)\s(.*)$/20\1-\2-\3 \5:\6:\7/" -e "s/( )([0-9]:)/ 0\2/")
         binlog_pos=$(grep "^# at " $aux_log | head -1 | sed -re "s/^# at ([0-9]*)/\1/")
