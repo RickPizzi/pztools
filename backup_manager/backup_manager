@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.10.8"
+BM_VERSION="4.10.9"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2762,8 +2762,8 @@ perform_maria_restore()
 		$ssh mkdir -p $target/full
 		if [ "$ssh" != "" ]
 		then
-			echo "--> eval $reader | $ssh \"$unencryptor | $uncompressor | $mbstream -p $parallelism -x -v -C $target/full\"" >> $logfile
-			eval $reader | $ssh "$unencryptor 2>/dev/null | $uncompressor | $mbstream -p $parallelism -x -v -C $target/full" 2>> $logfile
+			echo "--> eval $reader | $unencryptor 2>/dev/null | $ssh \"$uncompressor | $mbstream -p $parallelism -x -v -C $target/full\"" >> $logfile
+			eval $reader | $unencryptor 2>/dev/null | $ssh "$uncompressor | $mbstream -p $parallelism -x -v -C $target/full" 2>> $logfile
 		else
 			echo "--> eval $reader | $unencryptor | $uncompressor | $mbstream -p $parallelism -x -v -C $target/full" >> $logfile
 			eval $reader | $unencryptor 2>/dev/null | $uncompressor | $mbstream -p $parallelism -x -v -C $target/full 2>> $logfile
@@ -2803,8 +2803,8 @@ perform_maria_restore()
 		state_update "extracting incremental backup $id"
 		if [ "$ssh" != "" ]
 		then
-			echo "--> eval $reader | $ssh \"$unencryptor | $uncompressor | $mbstream -p $parallelism -x -v -C $target/$incdir\"" >> $logfile
-			eval $reader | $ssh "$unencryptor 2>/dev/null | $uncompressor | $mbstream -p $parallelism -x -v -C $target/$incdir" 2>> $logfile
+			echo "--> eval $reader | $unencryptor 2>/dev/null | $ssh \"$uncompressor | $mbstream -p $parallelism -x -v -C $target/$incdir\"" >> $logfile
+			eval $reader | $unencryptor 2>/dev/null | $ssh "$uncompressor | $mbstream -p $parallelism -x -v -C $target/$incdir" 2>> $logfile
 		else
 			echo "--> eval $reader | $unencryptor | $uncompressor | $mbstream -p $parallelism -x -v -C $target/$incdir" >> $logfile
 			eval $reader | $unencryptor 2>/dev/null | $uncompressor | $mbstream -p $parallelism -x -v -C $target/$incdir 2>> $logfile
