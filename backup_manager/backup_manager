@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.10.7"
+BM_VERSION="4.10.8"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -1699,16 +1699,21 @@ start_remote_server()
 
 compression_encryption_override()
 {
-	uncompressor=$(echo "select uncompressor from backup_history where uuid = '$1';" | dbquery $DB)
-	if [ "$($ssh which $uncompressor 2>/dev/null)" = "" ]
-	then
-		echo "ERROR: cannot exec '$uncompressor', is the program installed?"
-		exit 1
-	fi
 	unencryptor=$(echo "select unencryptor from backup_history where uuid = '$1';" | dbquery $DB)
 	if [ "$($ssh which $unencryptor 2>/dev/null)" = "" ]
 	then
 		echo "ERROR: cannot exec '$unencryptor', is the program installed?"
+		exit 1
+	fi
+	if [ "$BM_UNCOMPRESSOR" != "" ]
+	then
+		uncompressor="$BM_UNCOMPRESSOR" 
+		return
+	fi
+	uncompressor=$(echo "select uncompressor from backup_history where uuid = '$1';" | dbquery $DB)
+	if [ "$($ssh which $uncompressor 2>/dev/null)" = "" ]
+	then
+		echo "ERROR: cannot exec '$uncompressor', is the program installed?"
 		exit 1
 	fi
 }
