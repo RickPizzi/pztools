@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.10.9"
+BM_VERSION="4.10.10"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -657,6 +657,14 @@ is_compressed()
 		'') exit 2;;
 		*) exit 0;;
 	esac
+}
+
+print_decompressor()
+{
+	[ "$1" = "" ] && exit 2
+	dc=$(echo "select uncompressor from backup_history where uuid='$1';" | dbquery $DB)
+	[ "$dc" = "" ] && exit 2
+	echo $dc
 }
 
 print_latest()
@@ -3207,6 +3215,9 @@ case "$1" in
 		;;
 	'is-compressed') 
 		is_compressed $2
+		;;
+	'print-decompressor') 
+		print_decompressor $2
 		;;
 	'print-latest-id') 
 		print_latest_id
