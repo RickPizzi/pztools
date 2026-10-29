@@ -8,7 +8,7 @@
 
 # begin 
 
-BM_VERSION="4.10.10"
+BM_VERSION="4.10.11"
 CONFIGDIR=/etc/mariadb
 CONFIGNAME=backup_manager.cnf
 CONFIGFILE=$CONFIGDIR/$CONFIGNAME
@@ -2541,7 +2541,7 @@ build_slave()
 		[ "$cfg" != "" ] && sock_str="-S$cfg" || sock_str=""
 		sleep 10
 		galera=$(echo "select @@wsrep_on" | ssh $1 "$mysqlcli -ANr -u $user $sock_str $pass_str" 2>/dev/null)
-		ssh -q $ssh_port_opt $1 test $2/xtrabackup_binlog_info && bi=xtrabackup_binlog_info || bi=mariadb_backup_binlog_info
+		ssh -q $ssh_port_opt $1 test -f $2/xtrabackup_binlog_info && bi=xtrabackup_binlog_info || bi=mariadb_backup_binlog_info
 		( 
 			[ "$galera" = "" ] && echo "RESET MASTER;"
 			echo "CHANGE MASTER TO MASTER_HOST='$repl_host', MASTER_PORT=$repl_port, MASTER_USER='$repl_user', MASTER_PASSWORD='$repl_pass';"

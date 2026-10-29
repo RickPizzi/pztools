@@ -53,6 +53,10 @@ free_space_percentage=20
 #encryptor=openssl enc -aes-256-cbc -pass env:enc_key
 #unencryptor=openssl enc -d -aes-256-cbc -pass env:enc_key
 #
+# uploader options - to stream backups directly to the cloud
+#
+#uploader=aws s3 cp - $BACKUP_BUCKET/cluster/name/%s
+#
 #
 # downloader options - used when restoring
 # can be used to stream backup pieces from a cloud bucket (S3, GCP..)
